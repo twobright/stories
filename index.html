@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>睡前故事</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #1A1A2E;
+  --card: #16213E;
+  --accent: #FF6B9D;
+  --text: #E8E8E8;
+  --text-dim: #8892A4;
+  --highlight: rgba(255,107,157,0.15);
+  --radius: 12px;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ==================== DATA ====================
+const PRESET_STORIES = [
+{
+  id: 'preset_1',
+  title: '{主人公}和月亮姐姐',
+  category: '童话',
+  content: '夜晚来临了，天空中挂着一轮又大又圆的月亮。{主人公}躺在柔软的小床上，透过窗户望着月亮姐姐。月亮姐姐今晚特别温柔，她洒下银色的光芒，轻轻地照在{主人公}的脸上。"月亮姐姐，你能给我讲个故事吗？"{主人公}轻声问道。月亮姐姐微笑着说："当然可以呀，今晚我要给你讲一个关于云朵花的故事。"在很高很高的天空中，有一片特别的花园，那里开满了云朵做成的花。白天的时候，这些云朵花看起来就像普通的白云，但是到了晚上，它们就会发出淡淡的光芒，有粉色的、紫色的、还有蓝色的。每一朵云朵花里都住着一个小小的梦精灵，它们的工作就是把美好的梦送给世界上每一个乖孩子。今晚，有一个梦精灵特意为{主人公}准备了一个最甜蜜的梦。它轻轻地飘下来，落在{主人公}的枕头边，悄悄地说："闭上眼睛吧，让我带你去看最美丽的星空花园。"月亮姐姐说："现在，{主人公}也闭上眼睛吧，梦精灵已经在等你了哦。晚安，我的小宝贝，明天见。"银色的月光温柔地包围着{主人公}，像一条暖暖的被子。{主人公}感到越来越困了，嘴角带着微笑，慢慢地进入了甜蜜的梦乡。'
+},
+{
+  id: 'preset_2',
+  title: '{主人公}的魔法花园',
+  category: '童话',
+  content: '在{主人公}家的后院里，有一个很小很小的花园。白天看起来，那里只有几株普通的小草和几朵小花。但是{主人公}知道一个秘密——每当月亮升起的时候，这个花园就会变成一个魔法花园。今晚，{主人公}悄悄地趴在窗户上看着花园。月光洒下来的那一刻，奇迹发生了！小草变成了发光的翡翠色，每一片叶子上都挂着一颗闪闪发亮的露珠，像小星星一样眨着眼睛。花朵们一朵接一朵地绽放开来，发出七彩的光芒。最神奇的是，花园中央长出了一棵从来没有见过的大树，树上结满了发光的果实，有的像小灯笼，有的像星星，还有的像月亮。一只小小的萤火虫飞到{主人公}的窗前，闪着绿色的光说："你好呀，{主人公}！我是花园守护者小萤。每天晚上，我们都会在这里举办一场音乐会，用最温柔的旋律哄小朋友们入睡。"远处传来轻柔的音乐声，像是风铃在轻轻摇晃，又像是小溪在欢快地流淌。{主人公}听着这美妙的音乐，感觉眼皮越来越重。小萤轻轻说："晚安啦{主人公}，明晚我们再见哦。"魔法花园的光芒慢慢变得柔和，像一首轻轻的摇篮曲，伴着{主人公}进入了最甜蜜的梦乡。'
+},
+{
+  id: 'preset_3',
+  title: '小熊和{主人公}的星星',
+  category: '动物',
+  content: '森林里住着一只胖嘟嘟的小熊，它是{主人公}最好的朋友。每天晚上，小熊都会来到{主人公}的窗前，邀请{主人公}一起数星星。"一颗、两颗、三颗……"小熊用它毛茸茸的爪子指着天空，认真地数着。{主人公}靠在窗边，跟着小熊一起数。"你知道吗？"小熊神秘地说，"每一颗星星都是一个小朋友的梦想变的。当小朋友许下一个美好的愿望，天上就会多一颗闪亮的星星。"{主人公}仰起头看着满天的星星，问道："那最亮的那颗是谁的梦想呢？"小熊笑了笑说："那是我的梦想呀！我的梦想就是每天晚上都能和{主人公}一起数星星。"今晚的星空特别美丽，银河像一条闪闪发光的河流，横跨整个天空。突然，一颗流星划过夜空，留下一道金色的光芒。"快许愿！快许愿！"小熊兴奋地说。{主人公}闭上眼睛，默默地许了一个愿望。小熊打了一个大大的哈欠，说："我数到了一百零八颗星星啦，好困好困。{主人公}，我们明天再继续数好不好？"小熊轻轻地哼起了一首歌："一闪一闪亮晶晶，满天都是小星星……"歌声越来越轻，越来越轻，像远方飘来的风。{主人公}也打了一个小小的哈欠，抱着枕头，在星光下甜甜地睡着了。'
+},
+{
+  id: 'preset_4',
+  title: '{主人公}和小兔子的被窝',
+  category: '动物',
+  content: '冬天的晚上，外面刮着冷冷的北风。{主人公}裹着暖暖的被子，正准备睡觉，突然听到窗外传来一阵轻轻的敲门声。{主人公}打开门一看，原来是住在隔壁花园里的小白兔。小兔子冻得瑟瑟发抖，长长的耳朵都垂了下来。"小兔子，你怎么了？"{主人公}心疼地问。"我……我的被窝太冷了，怎么也暖不起来。"小兔子可怜巴巴地说。{主人公}立刻把小兔子拉了进来，说："来，我们一起分享我的被窝吧！我的被窝可暖和了。"小兔子开心极了，跳进了{主人公}暖暖的被窝里。{主人公}的被窝像一朵棉花云，又软又暖。小兔子的毛茸茸的身体贴着{主人公}，就像一个温暖的小毛球。"谢谢你，{主人公}。"小兔子感激地说，"你真是我最好的朋友。"{主人公}轻轻地抚摸着小兔子柔软的耳朵，说："以后每个冷冷的晚上，你都可以来找我哦。"小兔子高兴地眯起了眼睛，小声说："那我给你讲一个胡萝卜王国的故事吧……从前有一个胡萝卜王国……里面住着……"小兔子的声音越来越小，越来越轻。它已经在{主人公}温暖的被窝里睡着了，发出轻轻的呼噜声。{主人公}也觉得格外温暖、格外幸福，很快也跟着进入了甜蜜的梦乡。窗外的雪花轻轻飘落，而被窝里温暖如春。'
+},
+{
+  id: 'preset_5',
+  title: '{主人公}的梦中飞行',
+  category: '冒险',
+  content: '{主人公}闭上眼睛，感觉身体变得越来越轻，像一片羽毛一样，慢慢地飘了起来。{主人公}睁开眼睛一看，哇！自己正飞在夜空中，身边是一片片棉花糖一样的云朵。"我在飞耶！"{主人公}开心地张开双臂，像一只小鸟一样在云朵间穿梭。月亮就在不远处，看起来比平时大了好多好多，表面还闪着温柔的金色光芒。一只彩色的大蝴蝶飞到{主人公}身边，扇动着闪亮的翅膀说："你好呀，{主人公}！欢迎来到梦之天空。我带你去一个特别的地方好不好？"蝴蝶带着{主人公}飞过了七彩的彩虹桥，穿过了星星组成的隧道，最后来到了一座用云朵建造的城堡前。这座云朵城堡美极了，每一面墙都是软绵绵的白云，窗户是用星光做的，屋顶上还种着会发光的小花。城堡里住着许多小精灵，它们正在准备一场音乐会。"今晚的音乐会是专门为{主人公}演奏的哦！"蝴蝶说。精灵们奏响了最温柔的曲子，音符像金色的小鱼一样在空中游动。{主人公}坐在软绵绵的云朵沙发上，听着美妙的音乐，感觉越来越放松，越来越舒服。蝴蝶轻轻地给{主人公}盖上了一条用月光织成的毯子，柔声说："睡吧睡吧，明天晚上我们再一起飞翔。"{主人公}在云朵城堡里，伴着精灵们的歌声，甜甜地睡着了。'
+},
+{
+  id: 'preset_6',
+  title: '{主人公}和星星的秘密',
+  category: '科学',
+  content: '{主人公}是一个爱问问题的小朋友。今天晚上，{主人公}望着天空问妈妈："妈妈，为什么星星会一闪一闪的呀？"妈妈温柔地笑了笑，把{主人公}抱在怀里说："让我告诉你一个关于星星的小秘密吧。"原来呀，星星其实并不会眨眼睛。它们在很远很远的天空中，一直在稳定地发着光。但是在星光到达我们眼睛的路上，要穿过厚厚的大气层。大气就像一层流动的水，会不停地晃动。当星光穿过这些不停流动的空气时，光线就会被弯来弯去，一会儿亮一点，一会儿暗一点，看起来就像在一闪一闪了。"就像我们在游泳池底下看水面上的东西，是不是也会觉得它们在晃动呀？"妈妈说。{主人公}想了想，开心地点点头："我明白了！星星没有在眨眼睛，是空气在捣蛋！"妈妈亲了亲{主人公}的额头说："对啦，{主人公}真聪明！不过呢，就算知道了这个秘密，星星一闪一闪的样子还是很美丽，对不对？"窗外的星星们似乎听到了{主人公}的话，闪得更加欢快了。{主人公}对着最亮的那颗星星挥挥手，悄悄说："晚安，小星星，虽然我知道了你的秘密，但我还是觉得你眨眼睛的样子最可爱了。"说完，{主人公}打了一个小哈欠，在妈妈温暖的怀抱里，看着闪闪的星空，慢慢闭上了眼睛。今晚的梦里一定有好多好多星星在跳舞吧。'
+},
+{
+  id: 'preset_7',
+  title: '晚安，{主人公}',
+  category: '温馨',
+  content: '天色渐渐暗了下来，整个世界都变得安静了。鸟儿们飞回了巢里，花朵们合上了花瓣，就连调皮的风也变得温柔了起来。妈妈轻轻地走进{主人公}的房间，帮{主人公}掖好被角，在额头上印下一个轻轻的吻。"晚安，我的{主人公}。"爸爸在门口探出头来，对着{主人公}眨眨眼睛说："晚安呀小家伙，爸爸明天带你去公园好不好？"窗外的月亮也弯起了嘴角，对{主人公}说："晚安哦，做个好梦。"院子里的大树轻轻摇着叶子，发出沙沙沙的声音，好像在唱一首轻柔的摇篮曲："晚安，晚安，亲爱的{主人公}。"家里的小猫咪跳上了{主人公}的床尾，把自己蜷成一个小圆球，发出咕噜咕噜的声音，好像在说："我会守着你哦，晚安。"连{主人公}最喜欢的小熊玩偶也在枕头旁边静静地陪着，用它黑溜溜的眼睛望着{主人公}，仿佛在说："我们明天再一起玩吧，现在先好好睡觉哦。"整个家都充满了温暖和爱。台灯发出柔柔的光，像一颗小太阳守护着{主人公}。渐渐地，{主人公}感觉到被子特别特别暖和，像被云朵包住了一样。所有爱{主人公}的人都在说："晚安，{主人公}，我们永远爱你。"在满满的爱意中，{主人公}露出了幸福的微笑，安安稳稳地睡着了。明天又是美好的一天。晚安。'
+},
+{
+  id: 'preset_8',
+  title: '{主人公}的小火车旅行',
+  category: '冒险',
+  content: '嘟嘟嘟——一列小小的火车停在了{主人公}的床边。这可不是普通的火车，它是一列梦幻列车，每天晚上都会来接{主人公}去一个神奇的地方旅行。{主人公}高兴地爬上了火车，坐在软绵绵的座位上。小火车的窗帘是用星光编织的，座椅是用棉花云做的，就连扶手都是巧克力味的呢！"请坐好啦，梦幻列车即将出发！"小火车欢快地鸣了一声笛，轰隆轰隆地开动了。火车先经过了一片萤火虫森林，成千上万的萤火虫在树林间飞舞，把整片森林照得像银河一样璀璨。接着，小火车开过了一座彩虹桥，桥下是一条棉花糖河流，河里漂浮着各种颜色的果冻鱼。然后，火车驶入了一条长长的隧道，隧道的墙壁上画满了{主人公}最喜欢的动画人物，它们都在朝着{主人公}挥手微笑。出了隧道，火车来到了一座冰淇淋山前。山上覆盖着草莓味、香草味和巧克力味的冰淇淋，山顶上还有一面彩虹旗在飘扬。小火车慢慢地减速了，轰隆声变得越来越轻，越来越轻。"终点站到啦——甜梦镇！"小火车轻声说。{主人公}打了一个小哈欠，发现座位变得更加柔软了，就像自己的小床一样舒服。小火车开始轻轻地摇晃，像一个温柔的摇篮。"别担心，{主人公}，明天晚上我还会来接你的。"小火车用最最温柔的声音说，"现在，就在甜梦镇好好睡一觉吧……"轰隆轰隆……轰隆……轰隆……声音越来越轻，{主人公}在梦幻列车上幸福地睡着了。'
+}
+];
+
+// ==================== STATE ====================
+const State = {
+  currentView: 'list', // list | reading | settings | addStory
+  currentCategory: '全部',
+  currentStory: null,
+  stories: [],
+  favorites: new Set(),
+  customStories: [],
+  settings: {
+    protagonistName: '小宝贝',
+    voiceURI: '',
+    speed: 0.85,
+    pitch: 1.1,
+    sleepTimer: 0
+  },
+  tts: {
+    playing: false,
+    paused: false,
+    currentSentenceIndex: 0,
+    sentences: [],
+    utterance: null
+  },
+  sleepTimerEnd: null,
+  sleepTimerInterval: null
+};
+
+// ==================== STORAGE ====================
+function loadState() {
+  try {
+    const saved = localStorage.getItem('bedtime_stories_state');
+    if (saved) {
+      const data = JSON.parse(saved);
+      if (data.settings) Object.assign(State.settings, data.settings);
+      if (data.favorites) State.favorites = new Set(data.favorites);
+      if (data.customStories) State.customStories = data.customStories;
+    }
+  } catch(e) { console.warn('Failed to load state', e); }
+  State.stories = [...PRESET_STORIES, ...State.customStories];
+}
+
+function saveState() {
+  try {
+    localStorage.setItem('bedtime_stories_state', JSON.stringify({
+      settings: State.settings,
+      favorites: [...State.favorites],
+      customStories: State.customStories
+    }));
+  } catch(e) { console.warn('Failed to save state', e); }
+}
+
+// ==================== HELPERS ====================
+function replaceName(text) {
+  return text.replace(/\{主人公\}/g, State.settings.protagonistName || '小宝贝');
+}
+
+function splitSentences(text) {
+  return text.split(/(?<=[。！？\n])/g).map(s => s.trim()).filter(s => s.length > 0);
+}
+
+function getFilteredStories() {
+  let stories = State.stories;
+  if (State.currentCategory === '收藏') {
+    stories = stories.filter(s => State.favorites.has(s.id));
+  } else if (State.currentCategory !== '全部') {
+    stories = stories.filter(s => s.category === State.currentCategory);
+  }
+  return stories;
+}
+
+// ==================== TTS ENGINE ====================
+function getVoices() {
+  return window.speechSynthesis.getVoices();
+}
+
+function stopTTS() {
+  window.speechSynthesis.cancel();
+  State.tts.playing = false;
+  State.tts.paused = false;
+  State.tts.currentSentenceIndex = 0;
+  State.tts.utterance = null;
+  render();
+}
+
+function pauseTTS() {
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.pause();
+    State.tts.paused = true;
+    State.tts.playing = false;
+    render();
+  }
+}
+
+function resumeTTS() {
+  if (State.tts.paused) {
+    window.speechSynthesis.resume();
+    State.tts.paused = false;
+    State.tts.playing = true;
+    render();
+  }
+}
+
+function speakFromIndex(index) {
+  if (index >= State.tts.sentences.length) {
+    stopTTS();
+    return;
+  }
+  State.tts.currentSentenceIndex = index;
+  State.tts.playing = true;
+  State.tts.paused = false;
+
+  const text = State.tts.sentences[index];
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = State.settings.speed;
+  utterance.pitch = State.settings.pitch;
+  utterance.lang = 'zh-CN';
+
+  // Set voice
+  const voices = getVoices();
+  if (State.settings.voiceURI) {
+    const voice = voices.find(v => v.voiceURI === State.settings.voiceURI);
+    if (voice) utterance.voice = voice;
+  } else {
+    const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+    if (zhVoice) utterance.voice = zhVoice;
+  }
+
+  // Check sleep timer volume fade
+  if (State.sleepTimerEnd) {
+    const remaining = (State.sleepTimerEnd - Date.now()) / 1000;
+    if (remaining <= 0) {
+      stopTTS();
+      clearSleepTimer();
+      return;
+    }
+    if (remaining <= 30) {
+      utterance.volume = Math.max(0.1, remaining / 30);
+    }
+  }
+
+  utterance.onend = () => {
+    if (State.tts.playing) {
+      speakFromIndex(index + 1);
+    }
+  };
+  utterance.onerror = (e) => {
+    if (e.error !== 'canceled') {
+      speakFromIndex(index + 1);
+    }
+  };
+
+  State.tts.utterance = utterance;
+  window.speechSynthesis.speak(utterance);
+  render();
+}
+
+function playTTS() {
+  if (State.tts.paused) {
+    resumeTTS();
+    return;
+  }
+  if (!State.currentStory) return;
+  const content = replaceName(State.currentStory.content);
+  State.tts.sentences = splitSentences(content);
+  speakFromIndex(0);
+}
+
+// ==================== SLEEP TIMER ====================
+function startSleepTimer(minutes) {
+  clearSleepTimer();
+  if (minutes <= 0) return;
+  State.sleepTimerEnd = Date.now() + minutes * 60 * 1000;
+  State.sleepTimerInterval = setInterval(() => {
+    if (State.sleepTimerEnd && Date.now() >= State.sleepTimerEnd) {
+      stopTTS();
+      clearSleepTimer();
+    }
+    render();
+  }, 1000);
+}
+
+function clearSleepTimer() {
+  if (State.sleepTimerInterval) {
+    clearInterval(State.sleepTimerInterval);
+    State.sleepTimerInterval = null;
+  }
+  State.sleepTimerEnd = null;
+}
+
+// ==================== RENDER ====================
+function render() {
+  const app = document.getElementById('app');
+  if (State.currentView === 'list') {
+    app.innerHTML = renderListView();
+  } else if (State.currentView === 'reading') {
+    app.innerHTML = renderReadingView();
+  }
+  // Modals render on top
+  if (State.currentView === 'settings') {
+    app.innerHTML = renderListView() + renderSettingsModal();
+  } else if (State.currentView === 'addStory') {
+    app.innerHTML = renderListView() + renderAddStoryModal();
+  }
+}
+
+// ==================== LIST VIEW ====================
+function renderListView() {
+  const categories = ['全部', '童话', '动物', '冒险', '科学', '温馨', '收藏'];
+  const stories = getFilteredStories();
+  
+  return `
+    <div class="page">
+      <header class="header">
+        <h1 class="header-title">🌙 睡前故事</h1>
+        <div class="header-actions">
+          <button class="icon-btn" onclick="State.currentView='addStory';render()">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button class="icon-btn" onclick="State.currentView='settings';render()">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+        </div>
+      </header>
+      <div class="categories">
+        ${categories.map(c => `
+          <button class="chip ${State.currentCategory === c ? 'active' : ''}" 
+                  onclick="State.currentCategory='${c}';render()">
+            ${c}
+          </button>
+        `).join('')}
+      </div>
+      <div class="story-list">
+        ${stories.length === 0 ? '<div class="empty-msg">暂无故事</div>' : ''}
+        ${stories.map(s => renderStoryCard(s)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderStoryCard(story) {
+  const title = replaceName(story.title);
+  const preview = replaceName(story.content).substring(0, 60) + '...';
+  const isFav = State.favorites.has(story.id);
+  return `
+    <div class="story-card" onclick="openStory('${story.id}')">
+      <div class="story-card-header">
+        <span class="story-title">${title}</span>
+        <button class="fav-btn ${isFav ? 'active' : ''}" onclick="event.stopPropagation();toggleFav('${story.id}')">
+          ${isFav ? '★' : '☆'}
+        </button>
+      </div>
+      <div class="story-meta">
+        <span class="category-tag">${story.category}</span>
+      </div>
+      <p class="story-preview">${preview}</p>
+    </div>
+  `;
+}
+
+function openStory(id) {
+  State.currentStory = State.stories.find(s => s.id === id);
+  State.currentView = 'reading';
+  stopTTS();
+  render();
+}
+
+function toggleFav(id) {
+  if (State.favorites.has(id)) {
+    State.favorites.delete(id);
+  } else {
+    State.favorites.add(id);
+  }
+  saveState();
+  render();
+}
+
+// ==================== READING VIEW ====================
+function renderReadingView() {
+  if (!State.currentStory) return '';
+  const title = replaceName(State.currentStory.title);
+  const content = replaceName(State.currentStory.content);
+  const sentences = splitSentences(content);
+  const progress = State.tts.playing || State.tts.paused 
+    ? Math.round((State.tts.currentSentenceIndex / sentences.length) * 100) 
+    : 0;
+
+  let timerDisplay = '';
+  if (State.sleepTimerEnd) {
+    const remaining = Math.max(0, Math.ceil((State.sleepTimerEnd - Date.now()) / 1000));
+    const mins = Math.floor(remaining / 60);
+    const secs = remaining % 60;
+    timerDisplay = `<span class="timer-display">⏱ ${mins}:${secs.toString().padStart(2,'0')}</span>`;
+  }
+
+  return `
+    <div class="page reading-page">
+      <header class="header">
+        <button class="icon-btn" onclick="goBack()">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <h1 class="header-title reading-title">${title}</h1>
+        <div style="width:40px"></div>
+      </header>
+      <div class="reading-content" id="reading-content">
+        ${sentences.map((s, i) => `
+          <span class="sentence ${i === State.tts.currentSentenceIndex && (State.tts.playing || State.tts.paused) ? 'highlight' : ''}" 
+                onclick="jumpToSentence(${i})">${s}</span>
+        `).join('')}
+      </div>
+      <div class="control-bar">
+        ${timerDisplay}
+        <div class="progress-bar">
+          <div class="progress-fill" style="width:${progress}%"></div>
+        </div>
+        <div class="controls">
+          <button class="ctrl-btn" onclick="stopTTS()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          </button>
+          <button class="ctrl-btn play-btn" onclick="${State.tts.playing ? 'pauseTTS()' : 'playTTS()'}">
+            ${State.tts.playing 
+              ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>'
+              : '<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>'
+            }
+          </button>
+          <div class="speed-display" onclick="cycleSpeed()">${State.settings.speed.toFixed(2)}x</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function goBack() {
+  stopTTS();
+  State.currentView = 'list';
+  State.currentStory = null;
+  render();
+}
+
+function jumpToSentence(index) {
+  stopTTS();
+  const content = replaceName(State.currentStory.content);
+  State.tts.sentences = splitSentences(content);
+  speakFromIndex(index);
+}
+
+function cycleSpeed() {
+  const speeds = [0.5, 0.6, 0.7, 0.75, 0.85, 1.0, 1.2, 1.5, 2.0];
+  const idx = speeds.indexOf(State.settings.speed);
+  State.settings.speed = speeds[(idx + 1) % speeds.length];
+  saveState();
+  render();
+}
+
+// ==================== SETTINGS MODAL ====================
+function renderSettingsModal() {
+  const voices = getVoices();
+  const zhVoices = voices.filter(v => v.lang.startsWith('zh') || v.name.includes('Chinese') || v.name.includes('中文'));
+  const allVoices = zhVoices.length > 0 ? zhVoices : voices;
+
+  return `
+    <div class="modal-overlay" onclick="closeModal(event)">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <h2>设置</h2>
+          <button class="icon-btn" onclick="State.currentView='list';render()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="setting-group">
+            <label>主人公名字</label>
+            <input type="text" class="setting-input" value="${State.settings.protagonistName}" 
+                   onchange="State.settings.protagonistName=this.value;saveState();render()" 
+                   placeholder="输入名字">
+          </div>
+          <div class="setting-group">
+            <label>语音选择</label>
+            <select class="setting-input" onchange="State.settings.voiceURI=this.value;saveState()">
+              <option value="">系统默认</option>
+              ${allVoices.map(v => `
+                <option value="${v.voiceURI}" ${State.settings.voiceURI === v.voiceURI ? 'selected' : ''}>
+                  ${v.name} (${v.lang})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="setting-group">
+            <label>语速: ${State.settings.speed.toFixed(2)}x</label>
+            <input type="range" min="0.5" max="2.0" step="0.05" value="${State.settings.speed}"
+                   oninput="State.settings.speed=parseFloat(this.value);saveState();render()">
+          </div>
+          <div class="setting-group">
+            <label>音调: ${State.settings.pitch.toFixed(1)}x</label>
+            <input type="range" min="0.5" max="2.0" step="0.1" value="${State.settings.pitch}"
+                   oninput="State.settings.pitch=parseFloat(this.value);saveState();render()">
+          </div>
+          <div class="setting-group">
+            <label>睡眠定时</label>
+            <div class="timer-options">
+              ${[0,15,30,45,60].map(m => `
+                <button class="chip ${State.settings.sleepTimer === m ? 'active' : ''}"
+                        onclick="State.settings.sleepTimer=${m};saveState();${m > 0 ? `startSleepTimer(${m})` : 'clearSleepTimer()'};render()">
+                  ${m === 0 ? '关闭' : m + '分钟'}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function closeModal(e) {
+  if (e.target.classList.contains('modal-overlay')) {
+    State.currentView = 'list';
+    render();
+  }
+}
+
+// ==================== ADD STORY MODAL ====================
+function renderAddStoryModal() {
+  return `
+    <div class="modal-overlay" onclick="closeModal(event)">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <h2>添加故事</h2>
+          <button class="icon-btn" onclick="State.currentView='list';render()">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="setting-group">
+            <label>故事标题</label>
+            <input type="text" class="setting-input" id="new-title" placeholder="例如：{主人公}的新朋友">
+          </div>
+          <div class="setting-group">
+            <label>分类</label>
+            <select class="setting-input" id="new-category">
+              <option value="童话">童话</option>
+              <option value="动物">动物</option>
+              <option value="冒险">冒险</option>
+              <option value="科学">科学</option>
+              <option value="温馨">温馨</option>
+            </select>
+          </div>
+          <div class="setting-group">
+            <label>故事内容 <span class="hint">（使用 {主人公} 作为主人公占位符）</span></label>
+            <textarea class="setting-input story-textarea" id="new-content" rows="8" 
+                      placeholder="从前有一个..."></textarea>
+          </div>
+          <button class="primary-btn" onclick="addNewStory()">保存故事</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function addNewStory() {
+  const title = document.getElementById('new-title').value.trim();
+  const category = document.getElementById('new-category').value;
+  const content = document.getElementById('new-content').value.trim();
+  
+  if (!title || !content) {
+    alert('请填写标题和内容');
+    return;
+  }
+  
+  const newStory = {
+    id: 'custom_' + Date.now(),
+    title: title,
+    category: category,
+    content: content
+  };
+  
+  State.customStories.push(newStory);
+  State.stories = [...PRESET_STORIES, ...State.customStories];
+  saveState();
+  State.currentView = 'list';
+  render();
+}
+
+// ==================== INIT ====================
+loadState();
+
+// Voices may load async
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    if (State.currentView === 'settings') render();
+  };
+}
+
+render();
+</script>
+<style>
+/* ==================== LAYOUT ==================== */
+.page {
+  max-width: 600px;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding-bottom: 20px;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.header-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.reading-title {
+  font-size: 16px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  text-align: center;
+}
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+.icon-btn:hover { background: rgba(255,255,255,0.1); }
+
+/* ==================== CATEGORIES ==================== */
+.categories {
+  display: flex;
+  gap: 8px;
+  padding: 8px 20px 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.categories::-webkit-scrollbar { display: none; }
+.chip {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,107,157,0.3);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.chip.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.chip:hover:not(.active) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* ==================== STORY CARDS ==================== */
+.story-list {
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.story-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 16px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.story-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(255,107,157,0.1);
+}
+.story-card:active { transform: scale(0.98); }
+.story-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.story-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.fav-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px;
+}
+.fav-btn.active { color: #FFD700; }
+.story-meta { margin-bottom: 8px; }
+.category-tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255,107,157,0.15);
+  color: var(--accent);
+}
+.story-preview {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.empty-msg {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 40px;
+  font-size: 15px;
+}
+
+/* ==================== READING VIEW ==================== */
+.reading-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.reading-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  font-size: 17px;
+  line-height: 2;
+  color: var(--text);
+  -webkit-overflow-scrolling: touch;
+}
+.sentence {
+  transition: background 0.3s, color 0.3s;
+  border-radius: 4px;
+  padding: 1px 2px;
+  cursor: pointer;
+}
+.sentence.highlight {
+  background: var(--highlight);
+  color: var(--accent);
+}
+.control-bar {
+  padding: 12px 20px 20px;
+  background: var(--card);
+  border-top: 1px solid rgba(255,255,255,0.05);
+  border-radius: 20px 20px 0 0;
+}
+.progress-bar {
+  height: 3px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+.ctrl-btn {
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.ctrl-btn:hover { color: var(--accent); }
+.play-btn {
+  width: 56px;
+  height: 56px;
+  background: var(--accent);
+  border-radius: 50%;
+  color: #fff;
+}
+.play-btn:hover { background: #ff5089; color: #fff; }
+.speed-display {
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  min-width: 50px;
+  text-align: center;
+}
+.speed-display:hover { border-color: var(--accent); color: var(--accent); }
+.timer-display {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+/* ==================== MODAL ==================== */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.2s;
+}
+.modal {
+  background: var(--card);
+  width: 100%;
+  max-width: 600px;
+  max-height: 85vh;
+  border-radius: 20px 20px 0 0;
+  overflow-y: auto;
+  animation: slideUp 0.3s;
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  position: sticky;
+  top: 0;
+  background: var(--card);
+}
+.modal-header h2 {
+  font-size: 18px;
+  color: var(--text);
+}
+.modal-body {
+  padding: 20px;
+}
+.setting-group {
+  margin-bottom: 20px;
+}
+.setting-group label {
+  display: block;
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.setting-input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.setting-input:focus { border-color: var(--accent); }
+select.setting-input { appearance: auto; }
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  height: 6px;
+}
+.story-textarea {
+  min-height: 150px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.6;
+}
+.hint {
+  font-size: 12px;
+  color: var(--accent);
+}
+.timer-options {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.primary-btn {
+  width: 100%;
+  padding: 14px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.primary-btn:hover { background: #ff5089; }
+
+/* ==================== ANIMATIONS ==================== */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* ==================== RESPONSIVE ==================== */
+@media (max-width: 400px) {
+  .header { padding: 12px 16px; }
+  .categories { padding: 8px 16px 12px; }
+  .story-list { padding: 0 16px; }
+  .reading-content { padding: 16px; font-size: 16px; }
+  .control-bar { padding: 10px 16px 16px; }
+}
+</style>
+</body>
+</html>
