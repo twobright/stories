@@ -549,6 +549,16 @@ function splitSentences(text) {
   return text.split(/(?<=[。！？\n])/g).map(s => s.trim()).filter(s => s.length > 0);
 }
 
+// 清理文本中不需要朗读的符号（引号、书名号等）
+function cleanForTTS(text) {
+  return text
+    .replace(/["""''『』「」《》【】〈〉（）()]/g, '')
+    .replace(/[——…]{2,}/g, '，')
+    .replace(/——/g, '，')
+    .replace(/…/g, '')
+    .trim();
+}
+
 function getFilteredStories() {
   let stories = State.stories;
   if (State.currentCategory === '收藏') {
@@ -593,14 +603,20 @@ function resumeTTS() {
 
 function speakFromIndex(index) {
   if (index >= State.tts.sentences.length) {
-    stopTTS();
+    // 当前故事播完，自动播放同分类下一集
+    playNextStory();
     return;
   }
   State.tts.currentSentenceIndex = index;
   State.tts.playing = true;
   State.tts.paused = false;
 
-  const text = State.tts.sentences[index];
+  const text = cleanForTTS(State.tts.sentences[index]);
+  if (!text) {
+    // 如果清理后为空，跳到下一句
+    speakFromIndex(index + 1);
+    return;
+  }
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = State.settings.speed;
   utterance.pitch = State.settings.pitch;
@@ -753,8 +769,35 @@ function renderStoryCard(story) {
 function openStory(id) {
   State.currentStory = State.stories.find(s => s.id === id);
   State.currentView = 'reading';
-  stopTTS();
+  window.speechSynthesis.cancel();
+  State.tts.playing = false;
+  State.tts.paused = false;
+  State.tts.currentSentenceIndex = 0;
+  State.tts.utterance = null;
   render();
+  // 进入故事后自动开始播放
+  setTimeout(() => { playTTS(); }, 300);
+}
+
+// 播放同分类的下一个故事
+function playNextStory() {
+  if (!State.currentStory) { stopTTS(); return; }
+  const sameCategoryStories = State.stories.filter(s => s.category === State.currentStory.category);
+  const currentIndex = sameCategoryStories.findIndex(s => s.id === State.currentStory.id);
+  if (currentIndex >= 0 && currentIndex < sameCategoryStories.length - 1) {
+    // 有下一集
+    const nextStory = sameCategoryStories[currentIndex + 1];
+    State.currentStory = nextStory;
+    State.tts.playing = false;
+    State.tts.paused = false;
+    State.tts.currentSentenceIndex = 0;
+    State.tts.utterance = null;
+    render();
+    setTimeout(() => { playTTS(); }, 300);
+  } else {
+    // 没有下一集了，停止
+    stopTTS();
+  }
 }
 
 function toggleFav(id) {
