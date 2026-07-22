@@ -491,7 +491,7 @@ const PRESET_STORIES = [
 // ==================== STATE ====================
 const State = {
   currentView: 'list', // list | reading | settings | addStory
-  currentCategory: '全部',
+  currentCategory: '恐龙',
   currentStory: null,
   stories: [],
   favorites: new Set(),
@@ -714,7 +714,7 @@ function render() {
 
 // ==================== LIST VIEW ====================
 function renderListView() {
-  const categories = ['全部', '童话', '动物', '冒险', '科学', '温馨', '成语', '恐龙', '历险', '成长', '收藏'];
+  const categories = ['恐龙', '历险', '成长', '收藏'];
   const stories = getFilteredStories();
   
   return `
@@ -850,16 +850,12 @@ function renderReadingView() {
           <div class="progress-fill" style="width:${progress}%"></div>
         </div>
         <div class="controls">
-          <button class="ctrl-btn" onclick="stopTTS()">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-          </button>
           <button class="ctrl-btn play-btn" onclick="${State.tts.playing ? 'pauseTTS()' : 'playTTS()'}">
             ${State.tts.playing 
               ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>'
               : '<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>'
             }
           </button>
-          <div class="speed-display" onclick="cycleSpeed()">${State.settings.speed.toFixed(2)}x</div>
         </div>
       </div>
     </div>
