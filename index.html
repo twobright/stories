@@ -850,8 +850,6 @@ function openStory(id) {
   State.tts.currentSentenceIndex = 0;
   State.tts.utterance = null;
   render();
-  // 进入故事后自动开始播放
-  setTimeout(() => { playTTS(); }, 300);
 }
 
 // 播放同分类的下一个故事
@@ -863,15 +861,19 @@ function playNextStory() {
     // 有下一集
     const nextStory = sameCategoryStories[currentIndex + 1];
     State.currentStory = nextStory;
+    State.tts.currentSentenceIndex = 0;
+    // 直接开始播放下一集（此时已有用户交互上下文）
+    const title = replaceName(State.currentStory.title);
+    const content = replaceName(State.currentStory.content);
+    State.tts.sentences = [title + '。', ...splitSentences(content)];
+    render();
+    speakFromIndex(0);
+  } else {
+    // 没有下一集了，停止
     State.tts.playing = false;
     State.tts.paused = false;
     State.tts.currentSentenceIndex = 0;
-    State.tts.utterance = null;
     render();
-    setTimeout(() => { playTTS(); }, 300);
-  } else {
-    // 没有下一集了，停止
-    stopTTS();
   }
 }
 
@@ -1072,6 +1074,13 @@ function addNewStory() {
 // ==================== INIT ====================
 loadState();
 render();
+
+// iOS/移动端音频解锁：首次触摸时激活音频上下文
+document.addEventListener('touchstart', function unlockAudio() {
+  const player = getAudioPlayer();
+  player.play().then(() => { player.pause(); player.src = ''; }).catch(() => {});
+  document.removeEventListener('touchstart', unlockAudio);
+}, { once: true });
 </script>
 <style>
 /* ==================== LAYOUT ==================== */
