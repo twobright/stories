@@ -552,10 +552,15 @@ function splitSentences(text) {
 // 清理文本中不需要朗读的符号（引号、书名号等）
 function cleanForTTS(text) {
   return text
-    .replace(/["""''『』「」《》【】〈〉（）()]/g, '')
+    .replace(/["""''『』「」《》【】〈〉（）(){}｛｝\[\]]/g, '')
     .replace(/[——…]{2,}/g, '，')
     .replace(/——/g, '，')
-    .replace(/…/g, '')
+    .replace(/…+/g, '')
+    .replace(/[！!]{2,}/g, '！')
+    .replace(/[？?]{2,}/g, '？')
+    .replace(/~+/g, '')
+    .replace(/\.{2,}/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
