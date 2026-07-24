@@ -670,7 +670,7 @@ async function speakFromIndex(index) {
   // 合并短句，一次请求多句减少延迟
   let combinedText = text;
   let lookAhead = index + 1;
-  while (lookAhead < State.tts.sentences.length && combinedText.length < 300) {
+  while (lookAhead < State.tts.sentences.length && combinedText.length < 100) {
     const nextText = cleanForTTS(State.tts.sentences[lookAhead]);
     if (!nextText) { lookAhead++; continue; }
     combinedText += nextText;
@@ -750,8 +750,15 @@ async function speakFromIndex(index) {
     render();
 
   } catch (err) {
-    console.error('Edge TTS error:', err);
+    debugLog('ERROR: ' + err.message + ' | ' + err.name);
     isGenerating = false;
+    if (err.name === 'NotAllowedError') {
+      debugLog('浏览器阻止了自动播放！需要用户点击。');
+      State.tts.playing = false;
+      State.tts.paused = false;
+      render();
+      return;
+    }
     // 如果Edge TTS失败，跳到下一段继续尝试
     if (State.tts.playing) {
       speakFromIndex(lookAhead);
