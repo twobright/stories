@@ -728,7 +728,6 @@ async function speakFromIndex(index) {
     }
   }
 }
-}
 
 function playTTS() {
   if (State.tts.paused) {
@@ -838,7 +837,9 @@ function renderStoryCard(story) {
 function openStory(id) {
   State.currentStory = State.stories.find(s => s.id === id);
   State.currentView = 'reading';
-  window.speechSynthesis.cancel();
+  const player = getAudioPlayer();
+  player.pause();
+  player.src = '';
   State.tts.playing = false;
   State.tts.paused = false;
   State.tts.currentSentenceIndex = 0;
