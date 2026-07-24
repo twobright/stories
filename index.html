@@ -569,13 +569,43 @@ function getFilteredStories() {
   return stories;
 }
 
-// ==================== TTS ENGINE ====================
-function getVoices() {
-  return window.speechSynthesis.getVoices();
+// ==================== TTS ENGINE (Edge TTS via Cloudflare Worker) ====================
+const EDGE_TTS_URL = 'https://edge-tts.969381758.workers.dev/v1/audio/speech';
+const EDGE_TTS_KEY = 'API_KEY';
+
+// 音频播放器
+let audioPlayer = null;
+let audioQueue = []; // 待播放的句子队列
+let isGenerating = false;
+
+function getAudioPlayer() {
+  if (!audioPlayer) {
+    audioPlayer = new Audio();
+    audioPlayer.addEventListener('ended', onAudioEnded);
+    audioPlayer.addEventListener('error', onAudioError);
+  }
+  return audioPlayer;
+}
+
+function onAudioEnded() {
+  if (State.tts.playing) {
+    speakFromIndex(State.tts.currentSentenceIndex + 1);
+  }
+}
+
+function onAudioError() {
+  if (State.tts.playing) {
+    // 出错跳到下一句
+    speakFromIndex(State.tts.currentSentenceIndex + 1);
+  }
 }
 
 function stopTTS() {
-  window.speechSynthesis.cancel();
+  const player = getAudioPlayer();
+  player.pause();
+  player.src = '';
+  audioQueue = [];
+  isGenerating = false;
   State.tts.playing = false;
   State.tts.paused = false;
   State.tts.currentSentenceIndex = 0;
@@ -584,8 +614,9 @@ function stopTTS() {
 }
 
 function pauseTTS() {
-  if (window.speechSynthesis.speaking) {
-    window.speechSynthesis.pause();
+  const player = getAudioPlayer();
+  if (State.tts.playing) {
+    player.pause();
     State.tts.paused = true;
     State.tts.playing = false;
     render();
@@ -594,14 +625,15 @@ function pauseTTS() {
 
 function resumeTTS() {
   if (State.tts.paused) {
-    window.speechSynthesis.resume();
+    const player = getAudioPlayer();
+    player.play();
     State.tts.paused = false;
     State.tts.playing = true;
     render();
   }
 }
 
-function speakFromIndex(index) {
+async function speakFromIndex(index) {
   if (index >= State.tts.sentences.length) {
     // 当前故事播完，自动播放同分类下一集
     playNextStory();
@@ -610,55 +642,92 @@ function speakFromIndex(index) {
   State.tts.currentSentenceIndex = index;
   State.tts.playing = true;
   State.tts.paused = false;
+  render();
 
   const text = cleanForTTS(State.tts.sentences[index]);
   if (!text) {
-    // 如果清理后为空，跳到下一句
     speakFromIndex(index + 1);
     return;
   }
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = State.settings.speed;
-  utterance.pitch = State.settings.pitch;
-  utterance.lang = 'zh-CN';
 
-  // Set voice
-  const voices = getVoices();
-  if (State.settings.voiceURI) {
-    const voice = voices.find(v => v.voiceURI === State.settings.voiceURI);
-    if (voice) utterance.voice = voice;
-  } else {
-    const zhVoice = voices.find(v => v.lang.startsWith('zh'));
-    if (zhVoice) utterance.voice = zhVoice;
+  // 合并短句，一次请求多句减少延迟
+  let combinedText = text;
+  let lookAhead = index + 1;
+  while (lookAhead < State.tts.sentences.length && combinedText.length < 300) {
+    const nextText = cleanForTTS(State.tts.sentences[lookAhead]);
+    if (!nextText) { lookAhead++; continue; }
+    combinedText += nextText;
+    lookAhead++;
   }
 
-  // Check sleep timer volume fade
+  // Check sleep timer
   if (State.sleepTimerEnd) {
     const remaining = (State.sleepTimerEnd - Date.now()) / 1000;
-    if (remaining <= 0) {
-      stopTTS();
-      clearSleepTimer();
-      return;
-    }
-    if (remaining <= 30) {
-      utterance.volume = Math.max(0.1, remaining / 30);
-    }
+    if (remaining <= 0) { stopTTS(); clearSleepTimer(); return; }
   }
 
-  utterance.onend = () => {
-    if (State.tts.playing) {
-      speakFromIndex(index + 1);
-    }
-  };
-  utterance.onerror = (e) => {
-    if (e.error !== 'canceled') {
-      speakFromIndex(index + 1);
-    }
-  };
+  try {
+    isGenerating = true;
+    const response = await fetch(EDGE_TTS_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + EDGE_TTS_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'tts-1',
+        input: combinedText,
+        voice: 'shimmer',
+        speed: State.settings.speed
+      })
+    });
 
-  State.tts.utterance = utterance;
-  window.speechSynthesis.speak(utterance);
-  render();
+    if (!response.ok) {
+      throw new Error('TTS request failed: ' + response.status);
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const player = getAudioPlayer();
+    player.src = url;
+
+    // 睡眠定时音量控制
+    if (State.sleepTimerEnd) {
+      const remaining = (State.sleepTimerEnd - Date.now()) / 1000;
+      if (remaining <= 60) {
+        player.volume = Math.max(0.1, remaining / 60);
+      }
+    }
+
+    // 播放完成后跳到合并段的末尾
+    player.onended = () => {
+      URL.revokeObjectURL(url);
+      if (State.tts.playing) {
+        speakFromIndex(lookAhead);
+      }
+    };
+    player.onerror = () => {
+      URL.revokeObjectURL(url);
+      if (State.tts.playing) {
+        speakFromIndex(lookAhead);
+      }
+    };
+
+    await player.play();
+    isGenerating = false;
+    // 更新显示的当前索引
+    State.tts.currentSentenceIndex = index;
+    render();
+
+  } catch (err) {
+    console.error('Edge TTS error:', err);
+    isGenerating = false;
+    // 如果Edge TTS失败，跳到下一段继续尝试
+    if (State.tts.playing) {
+      speakFromIndex(lookAhead);
+    }
+  }
+}
 }
 
 function playTTS() {
@@ -887,10 +956,6 @@ function cycleSpeed() {
 
 // ==================== SETTINGS MODAL ====================
 function renderSettingsModal() {
-  const voices = getVoices();
-  const zhVoices = voices.filter(v => v.lang.startsWith('zh') || v.name.includes('Chinese') || v.name.includes('中文'));
-  const allVoices = zhVoices.length > 0 ? zhVoices : voices;
-
   return `
     <div class="modal-overlay" onclick="closeModal(event)">
       <div class="modal" onclick="event.stopPropagation()">
@@ -906,25 +971,9 @@ function renderSettingsModal() {
                    placeholder="输入名字">
           </div>
           <div class="setting-group">
-            <label>语音选择</label>
-            <select class="setting-input" onchange="State.settings.voiceURI=this.value;saveState()">
-              <option value="">系统默认</option>
-              ${allVoices.map(v => `
-                <option value="${v.voiceURI}" ${State.settings.voiceURI === v.voiceURI ? 'selected' : ''}>
-                  ${v.name} (${v.lang})
-                </option>
-              `).join('')}
-            </select>
-          </div>
-          <div class="setting-group">
             <label>语速: ${State.settings.speed.toFixed(2)}x</label>
             <input type="range" min="0.5" max="2.0" step="0.05" value="${State.settings.speed}"
                    oninput="State.settings.speed=parseFloat(this.value);saveState();render()">
-          </div>
-          <div class="setting-group">
-            <label>音调: ${State.settings.pitch.toFixed(1)}x</label>
-            <input type="range" min="0.5" max="2.0" step="0.1" value="${State.settings.pitch}"
-                   oninput="State.settings.pitch=parseFloat(this.value);saveState();render()">
           </div>
           <div class="setting-group">
             <label>睡眠定时</label>
@@ -1016,14 +1065,6 @@ function addNewStory() {
 
 // ==================== INIT ====================
 loadState();
-
-// Voices may load async
-if (window.speechSynthesis) {
-  window.speechSynthesis.onvoiceschanged = () => {
-    if (State.currentView === 'settings') render();
-  };
-}
-
 render();
 </script>
 <style>
