@@ -574,53 +574,26 @@ function getFilteredStories() {
   return stories;
 }
 
-// ==================== TTS ENGINE (Edge TTS via Cloudflare Worker) ====================
+// ==================== TTS ENGINE (双引擎：Edge TTS + 浏览器回退) ====================
 const EDGE_TTS_URL = 'https://edge-tts.969381758.workers.dev/v1/audio/speech';
 const EDGE_TTS_KEY = 'sk-bedtime-stories-2024';
+const EDGE_TTS_TIMEOUT = 4000;
 
-// 调试日志（显示在页面底部）
-let debugMessages = [];
-function debugLog(msg) {
-  console.log('[TTS]', msg);
-  debugMessages.push(new Date().toLocaleTimeString() + ' ' + msg);
-  if (debugMessages.length > 15) debugMessages.shift();
-  const el = document.getElementById('debug-panel');
-  if (el) el.innerHTML = debugMessages.join('<br>');
-}
-
-// 音频播放器
 let audioPlayer = null;
-let audioQueue = []; // 待播放的句子队列
-let isGenerating = false;
+let useEdgeTTS = true;
 
 function getAudioPlayer() {
-  if (!audioPlayer) {
-    audioPlayer = new Audio();
-    audioPlayer.addEventListener('ended', onAudioEnded);
-    audioPlayer.addEventListener('error', onAudioError);
-  }
+  if (!audioPlayer) audioPlayer = new Audio();
   return audioPlayer;
-}
-
-function onAudioEnded() {
-  if (State.tts.playing) {
-    speakFromIndex(State.tts.currentSentenceIndex + 1);
-  }
-}
-
-function onAudioError() {
-  if (State.tts.playing) {
-    // 出错跳到下一句
-    speakFromIndex(State.tts.currentSentenceIndex + 1);
-  }
 }
 
 function stopTTS() {
   const player = getAudioPlayer();
   player.pause();
   player.src = '';
-  audioQueue = [];
-  isGenerating = false;
+  player.onended = null;
+  player.onerror = null;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
   State.tts.playing = false;
   State.tts.paused = false;
   State.tts.currentSentenceIndex = 0;
@@ -629,29 +602,38 @@ function stopTTS() {
 }
 
 function pauseTTS() {
-  const player = getAudioPlayer();
-  if (State.tts.playing) {
-    player.pause();
-    State.tts.paused = true;
-    State.tts.playing = false;
-    render();
+  if (!State.tts.playing) return;
+  if (useEdgeTTS) {
+    getAudioPlayer().pause();
+  } else {
+    if (window.speechSynthesis) window.speechSynthesis.pause();
   }
+  State.tts.paused = true;
+  State.tts.playing = false;
+  render();
 }
 
 function resumeTTS() {
-  if (State.tts.paused) {
-    const player = getAudioPlayer();
-    player.play();
-    State.tts.paused = false;
-    State.tts.playing = true;
-    render();
+  if (!State.tts.paused) return;
+  if (useEdgeTTS) {
+    getAudioPlayer().play();
+  } else {
+    if (window.speechSynthesis) window.speechSynthesis.resume();
   }
+  State.tts.paused = false;
+  State.tts.playing = true;
+  render();
+}
+
+function fetchWithTimeout(url, options, timeout) {
+  return Promise.race([
+    fetch(url, options),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeout))
+  ]);
 }
 
 async function speakFromIndex(index) {
-  debugLog('speakFromIndex: index=' + index + ', total=' + State.tts.sentences.length);
   if (index >= State.tts.sentences.length) {
-    debugLog('所有句子播完，播放下一集');
     playNextStory();
     return;
   }
@@ -661,34 +643,27 @@ async function speakFromIndex(index) {
   render();
 
   const text = cleanForTTS(State.tts.sentences[index]);
-  debugLog('清理后文本: ' + (text ? text.substring(0, 30) + '...' : '(空)'));
-  if (!text) {
-    speakFromIndex(index + 1);
-    return;
-  }
+  if (!text) { speakFromIndex(index + 1); return; }
 
-  // 合并短句，一次请求多句减少延迟
   let combinedText = text;
   let lookAhead = index + 1;
-  while (lookAhead < State.tts.sentences.length && combinedText.length < 100) {
+  while (lookAhead < State.tts.sentences.length && combinedText.length < 150) {
     const nextText = cleanForTTS(State.tts.sentences[lookAhead]);
     if (!nextText) { lookAhead++; continue; }
     combinedText += nextText;
     lookAhead++;
   }
 
-  debugLog('合并文本长度: ' + combinedText.length + ', lookAhead=' + lookAhead);
-
-  // Check sleep timer
-  if (State.sleepTimerEnd) {
-    const remaining = (State.sleepTimerEnd - Date.now()) / 1000;
-    if (remaining <= 0) { stopTTS(); clearSleepTimer(); return; }
+  if (useEdgeTTS) {
+    await speakWithEdgeTTS(combinedText, lookAhead);
+  } else {
+    speakWithBrowserTTS(combinedText, lookAhead);
   }
+}
 
+async function speakWithEdgeTTS(text, nextIndex) {
   try {
-    isGenerating = true;
-    debugLog('正在请求Edge TTS...');
-    const response = await fetch(EDGE_TTS_URL, {
+    const response = await fetchWithTimeout(EDGE_TTS_URL, {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + EDGE_TTS_KEY,
@@ -696,88 +671,55 @@ async function speakFromIndex(index) {
       },
       body: JSON.stringify({
         model: 'tts-1',
-        input: combinedText,
+        input: text,
         voice: 'shimmer',
         speed: State.settings.speed
       })
-    });
+    }, EDGE_TTS_TIMEOUT);
 
-    debugLog('响应状态: ' + response.status);
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error('TTS failed: ' + response.status + ' ' + errText);
-    }
-
+    if (!response.ok) throw new Error('HTTP ' + response.status);
     const blob = await response.blob();
-    debugLog('收到音频blob: ' + blob.size + '字节, type=' + blob.type);
+    if (blob.size < 100) throw new Error('empty audio');
+
     const url = URL.createObjectURL(blob);
     const player = getAudioPlayer();
     player.src = url;
-
-    // 睡眠定时音量控制
-    if (State.sleepTimerEnd) {
-      const remaining = (State.sleepTimerEnd - Date.now()) / 1000;
-      if (remaining <= 60) {
-        player.volume = Math.max(0.1, remaining / 60);
-      }
-    }
-
-    // 播放完成后跳到合并段的末尾
-    player.onended = () => {
-      debugLog('音频播放结束');
-      URL.revokeObjectURL(url);
-      if (State.tts.playing) {
-        speakFromIndex(lookAhead);
-      }
-    };
-    player.onerror = (e) => {
-      debugLog('音频播放错误: ' + (e.message || player.error?.message || 'unknown'));
-      URL.revokeObjectURL(url);
-      if (State.tts.playing) {
-        speakFromIndex(lookAhead);
-      }
-    };
-
-    debugLog('开始播放...');
+    player.onended = () => { URL.revokeObjectURL(url); if (State.tts.playing) speakFromIndex(nextIndex); };
+    player.onerror = () => { URL.revokeObjectURL(url); if (State.tts.playing) speakFromIndex(nextIndex); };
     await player.play();
-    debugLog('播放已启动');
-    isGenerating = false;
-    State.tts.currentSentenceIndex = index;
-    render();
-    isGenerating = false;
-    // 更新显示的当前索引
-    State.tts.currentSentenceIndex = index;
-    render();
-
   } catch (err) {
-    debugLog('ERROR: ' + err.message + ' | ' + err.name);
-    isGenerating = false;
-    if (err.name === 'NotAllowedError') {
-      debugLog('浏览器阻止了自动播放！需要用户点击。');
-      State.tts.playing = false;
-      State.tts.paused = false;
-      render();
-      return;
-    }
-    // 如果Edge TTS失败，跳到下一段继续尝试
-    if (State.tts.playing) {
-      speakFromIndex(lookAhead);
-    }
+    console.warn('Edge TTS unavailable, falling back to browser TTS:', err.message);
+    useEdgeTTS = false;
+    speakWithBrowserTTS(text, nextIndex);
   }
 }
 
+function speakWithBrowserTTS(text, nextIndex) {
+  if (!window.speechSynthesis) { State.tts.playing = false; render(); return; }
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = State.settings.speed;
+  utterance.pitch = 1.1;
+  utterance.lang = 'zh-CN';
+  const voices = window.speechSynthesis.getVoices();
+  const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+  if (zhVoice) utterance.voice = zhVoice;
+  utterance.onend = () => { if (State.tts.playing) speakFromIndex(nextIndex); };
+  utterance.onerror = (e) => { if (e.error !== 'canceled' && State.tts.playing) speakFromIndex(nextIndex); };
+  window.speechSynthesis.speak(utterance);
+}
+
+}
+
 function playTTS() {
-  debugLog('playTTS called, paused=' + State.tts.paused);
   if (State.tts.paused) {
     resumeTTS();
     return;
   }
-  if (!State.currentStory) { debugLog('ERROR: no currentStory'); return; }
+  if (!State.currentStory) return;
+  useEdgeTTS = true; // 每次新播放重新尝试Edge TTS
   const title = replaceName(State.currentStory.title);
   const content = replaceName(State.currentStory.content);
-  // 先读标题，再读内容
   State.tts.sentences = [title + '。', ...splitSentences(content)];
-  debugLog('句子数: ' + State.tts.sentences.length);
   speakFromIndex(0);
 }
 
@@ -969,7 +911,6 @@ function renderReadingView() {
           </button>
         </div>
       </div>
-      <div id="debug-panel" style="position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.9);color:#0f0;font-size:10px;padding:8px;max-height:150px;overflow-y:auto;z-index:9999;font-family:monospace;">${debugMessages.join('<br>')}</div>
     </div>
   `;
 }
