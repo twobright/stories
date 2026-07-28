@@ -549,17 +549,27 @@ function splitSentences(text) {
   return text.split(/(?<=[。！？\n])/g).map(s => s.trim()).filter(s => s.length > 0);
 }
 
-// 清理文本中不需要朗读的符号（引号、书名号等）
+// 清理文本中不需要朗读的符号
 function cleanForTTS(text) {
   return text
+    // 去除所有引号、括号、书名号
     .replace(/["""''『』「」《》【】〈〉（）(){}｛｝\[\]]/g, '')
-    .replace(/[——…]{2,}/g, '，')
+    // 破折号替换为短停顿
     .replace(/——/g, '，')
+    .replace(/—/g, '，')
+    // 省略号去掉
     .replace(/…+/g, '')
-    .replace(/[！!]{2,}/g, '！')
-    .replace(/[？?]{2,}/g, '？')
-    .replace(/~+/g, '')
-    .replace(/\.{2,}/g, '')
+    .replace(/\.{3,}/g, '')
+    // 感叹号和问号替换为句号（保留语句停顿但不读出符号）
+    .replace(/[！!]+/g, '。')
+    .replace(/[？?]+/g, '。')
+    // 去掉冒号、分号、顿号以外的杂符号
+    .replace(/[：:；;～~·•＊*＃#]/g, '')
+    // 顿号替换为逗号
+    .replace(/、/g, '，')
+    // 多个标点合并
+    .replace(/[，。]{2,}/g, '。')
+    // 清理多余空格
     .replace(/\s+/g, ' ')
     .trim();
 }
