@@ -574,25 +574,9 @@ function getFilteredStories() {
   return stories;
 }
 
-// ==================== TTS ENGINE (双引擎：Edge TTS + 浏览器回退) ====================
-const EDGE_TTS_URL = 'https://edge-tts.969381758.workers.dev/v1/audio/speech';
-const EDGE_TTS_KEY = 'sk-bedtime-stories-2024';
-const EDGE_TTS_TIMEOUT = 4000;
-
-let audioPlayer = null;
-let useEdgeTTS = true;
-
-function getAudioPlayer() {
-  if (!audioPlayer) audioPlayer = new Audio();
-  return audioPlayer;
-}
+// ==================== TTS ENGINE (浏览器 speechSynthesis) ====================
 
 function stopTTS() {
-  const player = getAudioPlayer();
-  player.pause();
-  player.src = '';
-  player.onended = null;
-  player.onerror = null;
   if (window.speechSynthesis) window.speechSynthesis.cancel();
   State.tts.playing = false;
   State.tts.paused = false;
@@ -602,37 +586,24 @@ function stopTTS() {
 }
 
 function pauseTTS() {
-  if (!State.tts.playing) return;
-  if (useEdgeTTS) {
-    getAudioPlayer().pause();
-  } else {
-    if (window.speechSynthesis) window.speechSynthesis.pause();
+  if (window.speechSynthesis && window.speechSynthesis.speaking) {
+    window.speechSynthesis.pause();
+    State.tts.paused = true;
+    State.tts.playing = false;
+    render();
   }
-  State.tts.paused = true;
-  State.tts.playing = false;
-  render();
 }
 
 function resumeTTS() {
-  if (!State.tts.paused) return;
-  if (useEdgeTTS) {
-    getAudioPlayer().play();
-  } else {
-    if (window.speechSynthesis) window.speechSynthesis.resume();
+  if (State.tts.paused) {
+    window.speechSynthesis.resume();
+    State.tts.paused = false;
+    State.tts.playing = true;
+    render();
   }
-  State.tts.paused = false;
-  State.tts.playing = true;
-  render();
 }
 
-function fetchWithTimeout(url, options, timeout) {
-  return Promise.race([
-    fetch(url, options),
-    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeout))
-  ]);
-}
-
-async function speakFromIndex(index) {
+function speakFromIndex(index) {
   if (index >= State.tts.sentences.length) {
     playNextStory();
     return;
@@ -640,72 +611,31 @@ async function speakFromIndex(index) {
   State.tts.currentSentenceIndex = index;
   State.tts.playing = true;
   State.tts.paused = false;
-  render();
 
   const text = cleanForTTS(State.tts.sentences[index]);
   if (!text) { speakFromIndex(index + 1); return; }
 
-  let combinedText = text;
-  let lookAhead = index + 1;
-  while (lookAhead < State.tts.sentences.length && combinedText.length < 150) {
-    const nextText = cleanForTTS(State.tts.sentences[lookAhead]);
-    if (!nextText) { lookAhead++; continue; }
-    combinedText += nextText;
-    lookAhead++;
-  }
-
-  if (useEdgeTTS) {
-    await speakWithEdgeTTS(combinedText, lookAhead);
-  } else {
-    speakWithBrowserTTS(combinedText, lookAhead);
-  }
-}
-
-async function speakWithEdgeTTS(text, nextIndex) {
-  try {
-    const response = await fetchWithTimeout(EDGE_TTS_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + EDGE_TTS_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'tts-1',
-        input: text,
-        voice: 'shimmer',
-        speed: State.settings.speed
-      })
-    }, EDGE_TTS_TIMEOUT);
-
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    const blob = await response.blob();
-    if (blob.size < 100) throw new Error('empty audio');
-
-    const url = URL.createObjectURL(blob);
-    const player = getAudioPlayer();
-    player.src = url;
-    player.onended = () => { URL.revokeObjectURL(url); if (State.tts.playing) speakFromIndex(nextIndex); };
-    player.onerror = () => { URL.revokeObjectURL(url); if (State.tts.playing) speakFromIndex(nextIndex); };
-    await player.play();
-  } catch (err) {
-    console.warn('Edge TTS unavailable, falling back to browser TTS:', err.message);
-    useEdgeTTS = false;
-    speakWithBrowserTTS(text, nextIndex);
-  }
-}
-
-function speakWithBrowserTTS(text, nextIndex) {
-  if (!window.speechSynthesis) { State.tts.playing = false; render(); return; }
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = State.settings.speed;
   utterance.pitch = 1.1;
   utterance.lang = 'zh-CN';
+
   const voices = window.speechSynthesis.getVoices();
   const zhVoice = voices.find(v => v.lang.startsWith('zh'));
   if (zhVoice) utterance.voice = zhVoice;
-  utterance.onend = () => { if (State.tts.playing) speakFromIndex(nextIndex); };
-  utterance.onerror = (e) => { if (e.error !== 'canceled' && State.tts.playing) speakFromIndex(nextIndex); };
+
+  if (State.sleepTimerEnd) {
+    const remaining = (State.sleepTimerEnd - Date.now()) / 1000;
+    if (remaining <= 0) { stopTTS(); clearSleepTimer(); return; }
+    if (remaining <= 30) { utterance.volume = Math.max(0.1, remaining / 30); }
+  }
+
+  utterance.onend = () => { if (State.tts.playing) speakFromIndex(index + 1); };
+  utterance.onerror = (e) => { if (e.error !== 'canceled' && State.tts.playing) speakFromIndex(index + 1); };
+
+  State.tts.utterance = utterance;
   window.speechSynthesis.speak(utterance);
+  render();
 }
 
 }
@@ -716,7 +646,6 @@ function playTTS() {
     return;
   }
   if (!State.currentStory) return;
-  useEdgeTTS = true; // 每次新播放重新尝试Edge TTS
   const title = replaceName(State.currentStory.title);
   const content = replaceName(State.currentStory.content);
   State.tts.sentences = [title + '。', ...splitSentences(content)];
@@ -818,14 +747,14 @@ function renderStoryCard(story) {
 function openStory(id) {
   State.currentStory = State.stories.find(s => s.id === id);
   State.currentView = 'reading';
-  const player = getAudioPlayer();
-  player.pause();
-  player.src = '';
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
   State.tts.playing = false;
   State.tts.paused = false;
   State.tts.currentSentenceIndex = 0;
   State.tts.utterance = null;
   render();
+  // 进入故事后自动开始播放
+  setTimeout(() => { playTTS(); }, 300);
 }
 
 // 播放同分类的下一个故事
@@ -834,22 +763,16 @@ function playNextStory() {
   const sameCategoryStories = State.stories.filter(s => s.category === State.currentStory.category);
   const currentIndex = sameCategoryStories.findIndex(s => s.id === State.currentStory.id);
   if (currentIndex >= 0 && currentIndex < sameCategoryStories.length - 1) {
-    // 有下一集
     const nextStory = sameCategoryStories[currentIndex + 1];
     State.currentStory = nextStory;
-    State.tts.currentSentenceIndex = 0;
-    // 直接开始播放下一集（此时已有用户交互上下文）
-    const title = replaceName(State.currentStory.title);
-    const content = replaceName(State.currentStory.content);
-    State.tts.sentences = [title + '。', ...splitSentences(content)];
-    render();
-    speakFromIndex(0);
-  } else {
-    // 没有下一集了，停止
     State.tts.playing = false;
     State.tts.paused = false;
     State.tts.currentSentenceIndex = 0;
+    State.tts.utterance = null;
     render();
+    setTimeout(() => { playTTS(); }, 300);
+  } else {
+    stopTTS();
   }
 }
 
@@ -1050,13 +973,6 @@ function addNewStory() {
 // ==================== INIT ====================
 loadState();
 render();
-
-// iOS/移动端音频解锁：首次触摸时激活音频上下文
-document.addEventListener('touchstart', function unlockAudio() {
-  const player = getAudioPlayer();
-  player.play().then(() => { player.pause(); player.src = ''; }).catch(() => {});
-  document.removeEventListener('touchstart', unlockAudio);
-}, { once: true });
 </script>
 <style>
 /* ==================== LAYOUT ==================== */
