@@ -1125,7 +1125,9 @@ function renderListView() {
         `).join('')}
       </div>
       <div class="story-list">
-        ${stories.length === 0 ? '<div class="empty-msg">暂无故事</div>' : ''}
+        ${stories.length === 0 ? '<div class="empty-msg">暂无故事</div>' : `
+        <button class="copy-btn" onclick="copyAllStories()">📋 复制本分类全部故事</button>
+        `}
         ${stories.map(s => renderStoryCard(s)).join('')}
       </div>
     </div>
@@ -1140,9 +1142,12 @@ function renderStoryCard(story) {
     <div class="story-card" onclick="openStory('${story.id}')">
       <div class="story-card-header">
         <span class="story-title">${title}</span>
-        <button class="fav-btn ${isFav ? 'active' : ''}" onclick="event.stopPropagation();toggleFav('${story.id}')">
-          ${isFav ? '★' : '☆'}
-        </button>
+        <div class="story-card-actions">
+          <button class="copy-icon-btn" onclick="event.stopPropagation();copySingleStory('${story.id}')" title="复制">📋</button>
+          <button class="fav-btn ${isFav ? 'active' : ''}" onclick="event.stopPropagation();toggleFav('${story.id}')">
+            ${isFav ? '★' : '☆'}
+          </button>
+        </div>
       </div>
       <div class="story-meta">
         <span class="category-tag">${story.category}</span>
@@ -1182,6 +1187,48 @@ function playNextStory() {
   } else {
     stopTTS();
   }
+}
+
+// 复制本分类全部故事
+function copyAllStories() {
+  const stories = getFilteredStories();
+  const text = stories.map(s => {
+    const title = replaceName(s.title);
+    const content = replaceName(s.content);
+    return title + '\n\n' + content;
+  }).join('\n\n────────────────\n\n');
+  navigator.clipboard.writeText(text).then(() => {
+    alert('已复制 ' + stories.length + ' 个故事到剪贴板');
+  }).catch(() => {
+    // fallback for older browsers
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert('已复制 ' + stories.length + ' 个故事到剪贴板');
+  });
+}
+
+// 复制单个故事
+function copySingleStory(id) {
+  const story = State.stories.find(s => s.id === id);
+  if (!story) return;
+  const title = replaceName(story.title);
+  const content = replaceName(story.content);
+  const text = title + '\n\n' + content;
+  navigator.clipboard.writeText(text).then(() => {
+    alert('已复制：' + title);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert('已复制：' + title);
+  });
 }
 
 function toggleFav(id) {
@@ -1491,6 +1538,34 @@ render();
   align-items: center;
   margin-bottom: 8px;
 }
+.story-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.copy-icon-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.copy-icon-btn:hover { opacity: 1; }
+.copy-btn {
+  width: 100%;
+  padding: 10px;
+  background: rgba(255,107,157,0.1);
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  color: var(--accent);
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 4px;
+  transition: background 0.2s;
+}
+.copy-btn:hover { background: rgba(255,107,157,0.2); }
 .story-title {
   font-size: 16px;
   font-weight: 600;
