@@ -1031,8 +1031,13 @@ function speakFromIndex(index) {
   utterance.lang = 'zh-CN';
 
   const voices = window.speechSynthesis.getVoices();
-  const zhVoice = voices.find(v => v.lang.startsWith('zh'));
-  if (zhVoice) utterance.voice = zhVoice;
+  if (State.settings.voiceURI) {
+    const selectedVoice = voices.find(v => v.voiceURI === State.settings.voiceURI);
+    if (selectedVoice) utterance.voice = selectedVoice;
+  } else {
+    const zhVoice = voices.find(v => v.lang.startsWith('zh'));
+    if (zhVoice) utterance.voice = zhVoice;
+  }
 
   if (State.sleepTimerEnd) {
     const remaining = (State.sleepTimerEnd - Date.now()) / 1000;
@@ -1318,6 +1323,10 @@ function cycleSpeed() {
 
 // ==================== SETTINGS MODAL ====================
 function renderSettingsModal() {
+  const voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+  const zhVoices = voices.filter(v => v.lang.startsWith('zh') || v.name.includes('Chinese') || v.name.includes('中文'));
+  const allVoices = zhVoices.length > 0 ? zhVoices : voices;
+
   return `
     <div class="modal-overlay" onclick="closeModal(event)">
       <div class="modal" onclick="event.stopPropagation()">
@@ -1331,6 +1340,18 @@ function renderSettingsModal() {
             <input type="text" class="setting-input" value="${State.settings.protagonistName}" 
                    onchange="State.settings.protagonistName=this.value;saveState();render()" 
                    placeholder="输入名字">
+          </div>
+          <div class="setting-group">
+            <label>语音选择</label>
+            <select class="setting-input" onchange="State.settings.voiceURI=this.value;saveState()">
+              <option value="">系统默认</option>
+              ${allVoices.map(v => `
+                <option value="${v.voiceURI}" ${State.settings.voiceURI === v.voiceURI ? 'selected' : ''}>
+                  ${v.name} (${v.lang})
+                </option>
+              `).join('')}
+            </select>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">共${voices.length}个语音可用，中文${zhVoices.length}个</div>
           </div>
           <div class="setting-group">
             <label>语速: ${State.settings.speed.toFixed(2)}x</label>
@@ -1428,6 +1449,11 @@ function addNewStory() {
 // ==================== INIT ====================
 loadState();
 render();
+
+// Safari加载语音列表是异步的，需要监听
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => { if (State.currentView === 'settings') render(); };
+}
 </script>
 <style>
 /* ==================== LAYOUT ==================== */
