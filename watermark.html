@@ -85,6 +85,22 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
 .status.busy { color: var(--accent); }
 .hidden { display: none !important; }
 .mode-hint { font-size: 12px; color: var(--text-dim); margin-bottom: 10px; line-height: 1.6; }
+
+/* 结果面板：给手机长按保存用 */
+.result-panel { margin-top: 6px; }
+.save-hint {
+  background: rgba(255,107,157,0.14); border: 1px solid var(--accent);
+  border-radius: var(--radius); padding: 12px 14px; font-size: 14px;
+  line-height: 1.8; margin-bottom: 10px;
+}
+.save-hint b { color: var(--accent); }
+.save-hint .step { display: block; }
+#resultImg {
+  display: block; width: 100%; border-radius: var(--radius);
+  border: 2px solid var(--accent);
+  -webkit-touch-callout: default;   /* 允许长按弹出"存储到照片" */
+  touch-action: auto; user-select: auto; -webkit-user-select: auto;
+}
 </style>
 </head>
 <body>
@@ -99,6 +115,7 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
     <div class="tip">
       <b>说明：</b>图片只在你的手机/电脑本地处理，<b>不会上传到任何地方</b>。<br>
       <b>用法：</b>①选图 ②用手指或鼠标涂抹水印位置（涂成红色）③点"开始去水印" ④保存到本地。<br>
+      <b>手机保存：</b>点"保存到本地"后，页面底部会出现处理好的图，<b>长按那张图</b> → 「存储到照片」才会进相册。Safari 的"下载"只会存到「文件」App，不进相册。<br>
       <b>提示：</b>文字水印、纯色/渐变背景（天空、墙面）效果最好；复杂花纹背景可能留下轻微痕迹。水印在边角的话，用"裁剪"最干净。
     </div>
 
@@ -145,6 +162,15 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
       </div>
 
       <div class="status" id="status"></div>
+
+      <!-- 处理结果：手机长按这张图保存到相册 -->
+      <div class="result-panel hidden" id="resultPanel">
+        <div class="save-hint" id="saveHint"></div>
+        <div class="toolbar" id="shareBar" style="display:none">
+          <button class="btn primary" onclick="shareToSystem()">📤 用系统面板存到相册</button>
+        </div>
+        <img id="resultImg" alt="处理结果">
+      </div>
     </div>
   </div>
 </div>
@@ -174,6 +200,15 @@ function setStatus(msg, busy) {
   const el = $('status');
   el.textContent = msg || '';
   el.className = 'status' + (busy ? ' busy' : '');
+}
+
+// 旧的结果图过期了就收起来，避免存错
+function hideResult() {
+  const p = $('resultPanel');
+  if (!p) return;
+  p.classList.add('hidden');
+  $('resultImg').removeAttribute('src');
+  $('shareBar').style.display = 'none';
 }
 
 // ==================== 载入图片 ====================
@@ -235,6 +270,8 @@ function setupCanvas(bitmap) {
   undoStack = [];
   updateUndoBtn();
   cropRect = null;
+
+  hideResult();
 
   $('uploadArea').classList.add('hidden');
   $('editor').classList.remove('hidden');
@@ -395,6 +432,7 @@ function undo() {
   maskCanvas.width = snap.w; maskCanvas.height = snap.h;
   mainCtx.putImageData(snap.data, 0, 0);
   clearMask();
+  hideResult();
   fitCanvasDisplay();
   updateUndoBtn();
   setStatus('已撤销');
@@ -417,6 +455,7 @@ function resetImage() {
   mainCtx.clearRect(0, 0, w, h);
   mainCtx.drawImage(img, 0, 0, w, h);
   clearMask();
+  hideResult();
   fitCanvasDisplay();
   setStatus('已恢复原图');
 }
@@ -438,6 +477,7 @@ function applyCrop() {
   maskCanvas.width = w; maskCanvas.height = h;
   mainCtx.putImageData(cut, 0, 0);
   clearMask();
+  hideResult();
   fitCanvasDisplay();
   setMode('brush');
   setStatus('裁剪完成：' + w + '×' + h);
@@ -495,6 +535,7 @@ async function runInpaint() {
 
   const btn = $('btnRun');
   btn.disabled = true;
+  hideResult();
   setStatus('正在处理…（涂抹面积越大越慢，请稍等）', true);
   await nextFrame();
 
@@ -594,32 +635,138 @@ async function runInpaint() {
 }
 
 // ==================== 保存 ====================
-function saveImage() {
-  if (!mainCanvas) return;
-  const name = '去水印_' + Date.now() + '.png';
+const UA = navigator.userAgent || '';
+const IS_IOS = /iP(hone|ad|od)/.test(UA) ||
+               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_WECHAT = /MicroMessenger/i.test(UA);
+const IS_MOBILE = IS_IOS || /Android/i.test(UA);
 
-  const finish = (url, revoke) => {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    if (revoke) setTimeout(() => URL.revokeObjectURL(url), 5000);
-    setStatus('已保存：' + name + '（如果没反应，长按图片另存也可以）');
-  };
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (canvas.toBlob) {
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('导出失败')), type, quality);
+      } else {
+        // 老浏览器：dataURL 转 Blob
+        const dataUrl = canvas.toDataURL(type, quality);
+        const parts = dataUrl.split(',');
+        const bin = atob(parts[1]);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        resolve(new Blob([arr], { type: type || 'image/png' }));
+      }
+    } catch (e) { reject(e); }
+  });
+}
 
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(new Error('读取失败'));
+    fr.readAsDataURL(blob);
+  });
+}
+
+function stampName(ext) {
+  const t = new Date();
+  const p = n => (n < 10 ? '0' : '') + n;
+  return '去水印_' + t.getFullYear() + p(t.getMonth() + 1) + p(t.getDate()) +
+         '_' + p(t.getHours()) + p(t.getMinutes()) + p(t.getSeconds()) + '.' + ext;
+}
+
+// 把结果图显示出来，手机长按它就能"存储到照片"
+async function showResultImage(blob, hintHtml) {
+  const dataUrl = await blobToDataURL(blob);   // 用 dataURL，微信里长按也能保存
+  $('resultImg').src = dataUrl;
+  $('saveHint').innerHTML = hintHtml;
+  $('resultPanel').classList.remove('hidden');
+  setTimeout(() => {
+    $('resultPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
+}
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 8000);
+}
+
+// 记住最后一次导出的结果，供"系统面板"按钮再次使用
+let lastSaveBlob = null;
+let lastSaveName = '';
+
+function canSystemShare(blob, name) {
+  if (IS_WECHAT) return false;                       // 微信内置浏览器不支持
+  if (!navigator.share || !navigator.canShare || !window.File) return false;
   try {
-    if (mainCanvas.toBlob) {
-      mainCanvas.toBlob(blob => {
-        if (!blob) { finish(mainCanvas.toDataURL('image/png'), false); return; }
-        finish(URL.createObjectURL(blob), true);
-      }, 'image/png');
-    } else {
-      finish(mainCanvas.toDataURL('image/png'), false);
+    return navigator.canShare({ files: [new File([blob], name, { type: blob.type })] });
+  } catch (e) { return false; }
+}
+
+async function saveImage() {
+  if (!mainCanvas) return;
+  setStatus('正在导出图片…', true);
+  try {
+    // ---------- 手机：长按图片保存才会进相册 ----------
+    if (IS_MOBILE) {
+      const blob = await canvasToBlob(mainCanvas, 'image/jpeg', 0.95);
+      const name = stampName('jpg');
+      lastSaveBlob = blob; lastSaveName = name;
+
+      if (IS_WECHAT) {
+        setStatus('微信里不能直接下载，请长按下面的图片保存');
+        await showResultImage(blob,
+          '<b>微信里这样存到相册：</b>' +
+          '<span class="step">① <b>长按</b>下面这张图片</span>' +
+          '<span class="step">② 选「<b>保存图片</b>」</span>' +
+          '<span class="step">③ 没反应就点右上角「…」→ 用 Safari 打开本页</span>');
+      } else {
+        setStatus('请长按下面的图片保存到相册');
+        await showResultImage(blob,
+          '<b>存到相册（两种办法）：</b>' +
+          '<span class="step">① <b>长按</b>下面这张图片 → 选「<b>存储到照片</b>」（安卓：保存图片）</span>' +
+          '<span class="step">② 或点下面的「用系统面板存到相册」按钮</span>' +
+          '<span class="step">别用 Safari 的「下载」：那个只会存进「文件」App，相册里找不到。</span>');
+      }
+      // 支持系统分享的才显示这个按钮（必须由用户点击触发，不能自动调起）
+      $('shareBar').style.display = canSystemShare(blob, name) ? '' : 'none';
+      return;
     }
+
+    // ---------- 电脑：直接下载 PNG ----------
+    const blob = await canvasToBlob(mainCanvas, 'image/png');
+    const name = stampName('png');
+    lastSaveBlob = blob; lastSaveName = name;
+    downloadBlob(blob, name);
+    $('shareBar').style.display = 'none';
+    setStatus('已下载：' + name);
+    await showResultImage(blob, '<b>已下载到电脑。</b>也可以右键下面这张图「另存为」。');
   } catch (err) {
     setStatus('保存失败：' + err.message);
+  }
+}
+
+// 系统分享面板：iOS 里选「存储图像」就进相册
+async function shareToSystem() {
+  if (!lastSaveBlob) { setStatus('请先点"保存到本地"'); return; }
+  try {
+    const file = new File([lastSaveBlob], lastSaveName, { type: lastSaveBlob.type });
+    if (!navigator.canShare || !navigator.canShare({ files: [file] })) {
+      setStatus('这个浏览器不支持系统面板，请长按图片保存');
+      return;
+    }
+    setStatus('正在打开系统面板…', true);
+    await navigator.share({ files: [file] });
+    setStatus('面板里选「存储图像」就进相册了');
+  } catch (err) {
+    if (err && err.name === 'AbortError') setStatus('已取消，也可以长按图片保存');
+    else setStatus('系统面板打不开，请长按下面的图片保存');
   }
 }
 </script>
