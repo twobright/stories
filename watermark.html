@@ -130,8 +130,10 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
   <div class="section">
     <div class="tip">
       <b>说明：</b>图片只在你的手机/电脑本地处理，<b>不会上传到任何地方</b>。<br>
-      <b>AI 生成图（豆包 / Gemini / 千问）：</b>选图后会<b>自动识别并一键还原</b>，效果几乎无痕。<br>
-      <b>其他水印：</b>手动涂抹水印位置，再点"开始去水印"。<br>
+      <b>① AI 生成图（豆包 / Gemini / 千问）：</b>选图后<b>自动识别、一键还原</b>，精确到几乎无痕。<br>
+      <b>② 文字水印（比如 App 导出的"豆包 AI 生成"描边字）：</b>用<b>🎯 智能框选</b>框住水印，
+      工具会自动挑出笔画、保护画面线条，再点"开始去水印"。<br>
+      <b>③ 其他情况：</b>手动涂抹水印位置，再点"开始去水印"。<br>
       <b>手机保存：</b>点"保存到本地"后，页面底部会出现处理好的图，<b>长按那张图</b> → 「存储到照片」才会进相册。Safari 的"下载"只会存到「文件」App，不进相册。
     </div>
 
@@ -152,6 +154,7 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
         <div class="auto-desc" id="autoDesc"></div>
         <div class="toolbar" style="margin-bottom:0">
           <button class="btn primary" id="btnAuto" onclick="runAutoRemove()">✨ 一键去除</button>
+          <button class="btn" id="btnSmartCorner" onclick="smartFromCorner()">🎯 智能框选右下角</button>
           <button class="btn" id="btnAutoPick" onclick="toggleAutoPicker()">手动指定类型</button>
         </div>
         <div class="toolbar hidden" id="autoPicker" style="margin-top:8px;margin-bottom:0">
@@ -175,6 +178,7 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
       </div>
 
       <div class="toolbar">
+        <button class="btn" id="btnSmart" onclick="setMode('smart')">🎯 智能框选</button>
         <button class="btn active" id="btnBrush" onclick="setMode('brush')">✏️ 涂抹</button>
         <button class="btn" id="btnErase" onclick="setMode('erase')">🩹 擦除标记</button>
         <button class="btn" id="btnCrop" onclick="setMode('crop')">✂️ 裁剪</button>
@@ -182,7 +186,7 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
       </div>
 
       <div class="toolbar">
-        <button class="btn primary" id="btnRun" onclick="runInpaint()">开始去水印</button>
+        <button class="btn primary" id="btnRun" onclick="runRemoval()">开始去水印</button>
         <button class="btn" id="btnCropApply" onclick="applyCrop()" style="display:none">应用裁剪</button>
         <button class="btn" id="btnUndo" onclick="undo()" disabled>↩ 撤销</button>
         <button class="btn" onclick="resetImage()">重置原图</button>
@@ -348,12 +352,14 @@ window.addEventListener('resize', () => { if (mainCanvas) fitCanvasDisplay(); })
 // ==================== 模式切换 ====================
 function setMode(m) {
   mode = m;
-  ['btnBrush', 'btnErase', 'btnCrop'].forEach(id => $(id).classList.remove('active'));
+  ['btnSmart', 'btnBrush', 'btnErase', 'btnCrop'].forEach(id => $(id).classList.remove('active'));
+  if (m === 'smart') $('btnSmart').classList.add('active');
   if (m === 'brush') $('btnBrush').classList.add('active');
   if (m === 'erase') $('btnErase').classList.add('active');
   if (m === 'crop') $('btnCrop').classList.add('active');
 
   const hints = {
+    smart: '当前：智能框选 — 框住水印（松手后自动标出笔画），再点"开始去水印"。适合文字水印',
     brush: '当前：涂抹模式 — 涂抹要去掉的水印区域（涂成红色）',
     erase: '当前：擦除标记 — 擦掉涂错的红色标记',
     crop: '当前：裁剪模式 — 拖动框选要保留的区域，然后点"应用裁剪"'
@@ -362,7 +368,7 @@ function setMode(m) {
   $('btnRun').style.display = (m === 'crop') ? 'none' : '';
   $('btnCropApply').style.display = (m === 'crop') ? '' : 'none';
 
-  if (m === 'crop') { cropRect = null; redrawMask(); }
+  if (m === 'crop' || m === 'smart') { cropRect = null; smartMask = null; redrawMask(); }
 }
 
 function onBrushChange() {
@@ -393,7 +399,7 @@ function onPointerDown(e) {
   e.preventDefault();
   isDrawing = true;
   const p = getCanvasPos(e);
-  if (mode === 'crop') {
+  if (mode === 'crop' || mode === 'smart') {
     cropDragStart = p;
     cropRect = { x: p.x, y: p.y, w: 0, h: 0 };
   } else {
@@ -405,7 +411,7 @@ function onPointerMove(e) {
   if (!isDrawing || !mainCanvas) return;
   e.preventDefault();
   const p = getCanvasPos(e);
-  if (mode === 'crop') {
+  if (mode === 'crop' || mode === 'smart') {
     if (!cropDragStart) return;
     cropRect = {
       x: Math.min(cropDragStart.x, p.x),
@@ -420,8 +426,13 @@ function onPointerMove(e) {
 }
 
 function onPointerUp() {
+  const wasDrawing = isDrawing;
   isDrawing = false;
   cropDragStart = null;
+  // 智能框选：松手就自动把框里的水印笔画找出来
+  if (wasDrawing && mode === 'smart' && cropRect && cropRect.w > 8 && cropRect.h > 6) {
+    previewSmart();
+  }
 }
 
 function paintAt(x, y, erase) {
@@ -449,8 +460,14 @@ function clearMask() {
 }
 
 function redrawMask() {
-  // 裁剪模式下，用遮罩显示选区
+  // 裁剪 / 智能框选模式下，用遮罩显示选区
   maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+  if (mode === 'smart' && cropRect && cropRect.w > 2 && cropRect.h > 2) {
+    maskCtx.strokeStyle = '#5FD3A0';
+    maskCtx.lineWidth = Math.max(1, 2 / displayScale);
+    maskCtx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+    return;
+  }
   if (mode === 'crop' && cropRect && cropRect.w > 2 && cropRect.h > 2) {
     maskCtx.fillStyle = 'rgba(0,0,0,0.55)';
     maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
@@ -688,6 +705,335 @@ async function runInpaint(opts) {
 }
 
 /* ==================================================================
+   智能框选去水印（对付"文字水印"，比如豆包 App 导出图右下角的
+   "豆包 AI 生成" 描边字）
+
+   思路：水印是低对比度的细笔画，压在一片相对平坦的背景上。
+     1. 用中值滤波估计"没有水印时的背景长什么样"（细笔画会被中值吃掉）；
+     2. 和背景偏差适中的像素 = 水印笔画；
+        偏差特别大的 = 插画本身的线条/边缘，要保护，绝不动也绝不拿来当参考；
+     3. 从边界往里一层层用"邻域可信像素的中位数"填（洋葱式），再轻微平滑。
+   相比直接涂一大块做扩散填充，只动细笔画，痕迹小得多。
+   ================================================================== */
+
+let smartMask = null;      // { x, y, w, h, mask: Uint8Array, core: Uint8Array }
+
+const SMART_STRONG = 80;   // 偏差超过这个值算"插画内容"，要保护
+const SMART_MED_R = 3;     // 背景估计用的中值半径（7x7）
+const SMART_FILL_R = 6;    // 填充时取邻域中位数的半径
+const SMART_MAX_FRAC = 0.62; // 框里命中比例超过这个，说明框歪了或背景太花
+
+// 一维中值（可分离近似，比真正的二维中值快很多，对细笔画够用）
+function median1D(src, dst, w, h, r, horizontal) {
+  const n = 2 * r + 1;
+  const buf = new Float32Array(n);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let cnt = 0;
+      for (let k = -r; k <= r; k++) {
+        const xx = horizontal ? x + k : x;
+        const yy = horizontal ? y : y + k;
+        if (xx < 0 || xx >= w || yy < 0 || yy >= h) continue;
+        buf[cnt++] = src[yy * w + xx];
+      }
+      // 插入排序（n 很小）
+      for (let i = 1; i < cnt; i++) {
+        const v = buf[i]; let j = i - 1;
+        while (j >= 0 && buf[j] > v) { buf[j + 1] = buf[j]; j--; }
+        buf[j + 1] = v;
+      }
+      dst[y * w + x] = buf[cnt >> 1];
+    }
+  }
+}
+
+function dilateMask(m, w, h, times) {
+  let cur = m;
+  for (let t = 0; t < times; t++) {
+    const out = new Uint8Array(cur.length);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (cur[i] ||
+            (x > 0 && cur[i - 1]) || (x < w - 1 && cur[i + 1]) ||
+            (y > 0 && cur[i - w]) || (y < h - 1 && cur[i + w])) out[i] = 1;
+      }
+    }
+    cur = out;
+  }
+  return cur;
+}
+
+// 在给定矩形里找水印笔画
+function smartDetect(rect) {
+  const x = Math.max(0, Math.round(rect.x));
+  const y = Math.max(0, Math.round(rect.y));
+  const w = Math.min(mainCanvas.width - x, Math.round(rect.w));
+  const h = Math.min(mainCanvas.height - y, Math.round(rect.h));
+  if (w < 6 || h < 6) return null;
+
+  const d = mainCtx.getImageData(x, y, w, h).data;
+  const n = w * h;
+
+  // 每个通道分别估背景，取三通道最大偏差
+  const chan = new Float32Array(n);
+  const tmp = new Float32Array(n);
+  const bgc = new Float32Array(n);
+  const dev = new Float32Array(n);
+  const bg = new Float32Array(n * 3);
+
+  for (let c = 0; c < 3; c++) {
+    for (let i = 0; i < n; i++) chan[i] = d[i * 4 + c];
+    median1D(chan, tmp, w, h, SMART_MED_R, true);
+    median1D(tmp, bgc, w, h, SMART_MED_R, false);
+    for (let i = 0; i < n; i++) {
+      bg[i * 3 + c] = bgc[i];
+      const e = Math.abs(chan[i] - bgc[i]);
+      if (e > dev[i]) dev[i] = e;
+    }
+  }
+
+  // 噪声水平 = 偏差的中位数（绝大多数像素是背景）
+  const sorted = Float32Array.from(dev);
+  sorted.sort();
+  const noise = sorted[sorted.length >> 1];
+  const T = Math.max(4, noise * 3 + 2);
+
+  const core = new Uint8Array(n);       // 插画内容，保护
+  const weak = new Uint8Array(n);       // 疑似水印笔画
+  for (let i = 0; i < n; i++) {
+    if (dev[i] >= SMART_STRONG) core[i] = 1;
+    else if (dev[i] > T) weak[i] = 1;
+  }
+
+  const grown = dilateMask(weak, w, h, 1);
+  const mask = new Uint8Array(n);
+  let cnt = 0;
+  for (let i = 0; i < n; i++) {
+    if (grown[i] && !core[i]) { mask[i] = 1; cnt++; }
+  }
+
+  return { x: x, y: y, w: w, h: h, mask: mask, core: core, bg: bg,
+           count: cnt, frac: cnt / n, noise: noise, threshold: T };
+}
+
+// 把检测结果画成红色标记，让用户先看一眼
+function previewSmart() {
+  if (!mainCanvas || !cropRect) return;
+  setStatus('正在找水印笔画…', true);
+  const res = smartDetect(cropRect);
+  if (!res) { setStatus('框太小了，重新框一下'); return; }
+  smartMask = res;
+
+  maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+  const mimg = maskCtx.createImageData(res.w, res.h);
+  const md = mimg.data;
+  for (let i = 0; i < res.mask.length; i++) {
+    const p = i * 4;
+    if (res.mask[i]) { md[p] = 255; md[p + 1] = 60; md[p + 2] = 90; md[p + 3] = 150; }
+    else if (res.core[i]) { md[p] = 60; md[p + 1] = 200; md[p + 2] = 255; md[p + 3] = 110; }
+  }
+  maskCtx.putImageData(mimg, res.x, res.y);
+  maskCtx.strokeStyle = '#5FD3A0';
+  maskCtx.lineWidth = Math.max(1, 2 / displayScale);
+  maskCtx.strokeRect(res.x, res.y, res.w, res.h);
+
+  if (res.frac > SMART_MAX_FRAC) {
+    setStatus('框里' + Math.round(res.frac * 100) + '%都被判成水印了，背景可能太花。' +
+              '把框缩小一点只框水印，或者改用"涂抹"。');
+  } else if (res.count < 20) {
+    setStatus('这块没找到明显的水印笔画，试着把框挪到水印上。');
+  } else {
+    setStatus('红色=要去掉的水印笔画，蓝色=保护的画面内容。看着对就点"开始去水印"。');
+  }
+}
+
+// 洋葱式中位数填充 + 轻微平滑
+async function applySmart() {
+  if (!smartMask) { setStatus('先框住水印（松手会自动标出笔画）'); return; }
+  const res = smartMask;
+  if (res.count < 5) { setStatus('没找到要去掉的笔画'); return; }
+
+  const btn = $('btnRun');
+  btn.disabled = true;
+  hideResult();
+  setStatus('正在去除水印笔画…', true);
+  await nextFrame();
+
+  try {
+    pushUndo();
+    const w = res.w, h = res.h, n = w * h;
+    const region = mainCtx.getImageData(res.x, res.y, w, h);
+    const d = region.data;
+    const buf = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      buf[i * 3] = d[i * 4]; buf[i * 3 + 1] = d[i * 4 + 1]; buf[i * 3 + 2] = d[i * 4 + 2];
+    }
+
+    // known：可信像素（既不是要填的，也不是插画强边缘）
+    const known = new Uint8Array(n);
+    for (let i = 0; i < n; i++) known[i] = (!res.mask[i] && !res.core[i]) ? 1 : 0;
+
+    const todo = [];
+    for (let i = 0; i < n; i++) if (res.mask[i]) todo.push(i);
+
+    const R = SMART_FILL_R;
+    const sampR = new Float32Array((2 * R + 1) * (2 * R + 1));
+    const sampG = new Float32Array(sampR.length);
+    const sampB = new Float32Array(sampR.length);
+    const med = (arr, cnt) => {
+      for (let i = 1; i < cnt; i++) {
+        const v = arr[i]; let j = i - 1;
+        while (j >= 0 && arr[j] > v) { arr[j + 1] = arr[j]; j--; }
+        arr[j + 1] = v;
+      }
+      return arr[cnt >> 1];
+    };
+
+    let remaining = todo.slice();
+    let round = 0;
+    while (remaining.length && round < 40) {
+      round++;
+      const next = [];
+      const doneNow = [];
+      for (let k = 0; k < remaining.length; k++) {
+        const i = remaining[k];
+        const x = i % w, y = (i - x) / w;
+        let cnt = 0;
+        const y0 = Math.max(0, y - R), y1 = Math.min(h - 1, y + R);
+        const x0 = Math.max(0, x - R), x1 = Math.min(w - 1, x + R);
+        for (let yy = y0; yy <= y1; yy++) {
+          const row = yy * w;
+          for (let xx = x0; xx <= x1; xx++) {
+            const j = row + xx;
+            if (!known[j]) continue;
+            sampR[cnt] = buf[j * 3];
+            sampG[cnt] = buf[j * 3 + 1];
+            sampB[cnt] = buf[j * 3 + 2];
+            cnt++;
+          }
+        }
+        if (cnt >= 10) {
+          buf[i * 3] = med(sampR, cnt);
+          buf[i * 3 + 1] = med(sampG, cnt);
+          buf[i * 3 + 2] = med(sampB, cnt);
+          doneNow.push(i);
+        } else {
+          next.push(i);
+        }
+      }
+      if (!doneNow.length) {
+        // 极端情况：邻域全是待填/保护像素，退回用背景估计
+        for (let k = 0; k < next.length; k++) {
+          const i = next[k];
+          buf[i * 3] = res.bg[i * 3];
+          buf[i * 3 + 1] = res.bg[i * 3 + 1];
+          buf[i * 3 + 2] = res.bg[i * 3 + 2];
+        }
+        break;
+      }
+      for (let k = 0; k < doneNow.length; k++) known[doneNow[k]] = 1;
+      remaining = next;
+      if (round % 3 === 0) {
+        setStatus('正在去除水印笔画…还剩 ' + remaining.length + ' 个点', true);
+        await nextFrame();
+      }
+    }
+
+    /* 线条修复：水印笔画压在细线（分割线、轮廓线）上时，那几个点被当成背景填掉，
+       线上会留小缺口。凡是"左右两侧"或"上下两侧"都挨着画面内容的点，
+       就用两侧内容的均值接回去，把线补上。 */
+    const bridged = new Uint8Array(n);
+    const SPAN = 7;
+    for (let round2 = 0; round2 < 3; round2++) {
+      let did = 0;
+      for (let k = 0; k < todo.length; k++) {
+        const i = todo[k];
+        if (bridged[i]) continue;
+        const x = i % w, y = (i - x) / w;
+        for (let dir = 0; dir < 2; dir++) {
+          const step = dir === 0 ? 1 : w;
+          const lim = dir === 0 ? x : y;
+          const lim2 = dir === 0 ? (w - 1 - x) : (h - 1 - y);
+          let a = -1, b = -1;
+          for (let t = 1; t <= SPAN && t <= lim; t++) {
+            const j = i - t * step;
+            if (res.core[j] || bridged[j]) { a = j; break; }
+            if (!res.mask[j]) break;
+          }
+          for (let t = 1; t <= SPAN && t <= lim2; t++) {
+            const j = i + t * step;
+            if (res.core[j] || bridged[j]) { b = j; break; }
+            if (!res.mask[j]) break;
+          }
+          if (a >= 0 && b >= 0) {
+            const p = i * 3, pa = a * 3, pb = b * 3;
+            buf[p] = (buf[pa] + buf[pb]) / 2;
+            buf[p + 1] = (buf[pa + 1] + buf[pb + 1]) / 2;
+            buf[p + 2] = (buf[pa + 2] + buf[pb + 2]) / 2;
+            bridged[i] = 1;
+            did++;
+            break;
+          }
+        }
+      }
+      if (!did) break;
+    }
+
+    // 轻微平滑，抹掉块状接缝；插画强边缘和刚补好的线条不参与
+    for (let pass = 0; pass < 20; pass++) {
+      const rev = (pass & 1) === 1;
+      for (let k = 0; k < todo.length; k++) {
+        const i = todo[rev ? todo.length - 1 - k : k];
+        if (bridged[i]) continue;          // 补好的线条不要再被平滑抹掉
+        const x = i % w, y = (i - x) / w;
+        let sr = 0, sg = 0, sb = 0, c = 0;
+        if (x > 0 && !res.core[i - 1] && !bridged[i - 1]) { const q = (i - 1) * 3; sr += buf[q]; sg += buf[q+1]; sb += buf[q+2]; c++; }
+        if (x < w - 1 && !res.core[i + 1] && !bridged[i + 1]) { const q = (i + 1) * 3; sr += buf[q]; sg += buf[q+1]; sb += buf[q+2]; c++; }
+        if (y > 0 && !res.core[i - w] && !bridged[i - w]) { const q = (i - w) * 3; sr += buf[q]; sg += buf[q+1]; sb += buf[q+2]; c++; }
+        if (y < h - 1 && !res.core[i + w] && !bridged[i + w]) { const q = (i + w) * 3; sr += buf[q]; sg += buf[q+1]; sb += buf[q+2]; c++; }
+        if (!c) continue;
+        const p = i * 3;
+        buf[p] = 0.35 * buf[p] + 0.65 * (sr / c);
+        buf[p + 1] = 0.35 * buf[p + 1] + 0.65 * (sg / c);
+        buf[p + 2] = 0.35 * buf[p + 2] + 0.65 * (sb / c);
+      }
+      if ((pass & 7) === 7) await nextFrame();
+    }
+
+    for (let k = 0; k < todo.length; k++) {
+      const i = todo[k], p = i * 3, q = i * 4;
+      d[q] = Math.round(buf[p]); d[q + 1] = Math.round(buf[p + 1]); d[q + 2] = Math.round(buf[p + 2]);
+      d[q + 3] = 255;
+    }
+    mainCtx.putImageData(region, res.x, res.y);
+    clearMask();
+    smartMask = null;
+    setStatus('水印笔画已去除（' + todo.length + ' 个点），可以保存了。还有残留就再框一次。');
+  } catch (err) {
+    setStatus('处理失败：' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// 右下角通常是水印所在，给个默认框
+function proposeCornerBox() {
+  const W = mainCanvas.width, H = mainCanvas.height;
+  const bw = Math.min(Math.round(W * 0.42), Math.round(W - 4));
+  const bh = Math.min(Math.round(H * 0.075) + 24, Math.round(H - 4));
+  return { x: W - bw - 2, y: H - bh - 2, w: bw, h: bh };
+}
+
+// 预置模板没命中时，用这个兜底
+function smartFromCorner() {
+  setMode('smart');
+  cropRect = proposeCornerBox();
+  previewSmart();
+  $('canvasWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+/* ==================================================================
    自动去除 AI 生成图水印（豆包 / Gemini / 千问）
 
    原理：这类水印是固定位置、固定形状的白色半透明图层，
@@ -824,6 +1170,12 @@ function reverseAlpha(region, alphaMap) {
       region[p + c] = v < 0 ? 0 : (v > 255 ? 255 : v);
     }
   }
+}
+
+// "开始去水印"按模式分派
+function runRemoval() {
+  if (mode === 'smart') return applySmart();
+  return runInpaint();
 }
 
 // 单个像素的反解值
@@ -982,9 +1334,10 @@ async function detectWatermark() {
     $('btnAuto').style.display = '';
     $('btnAuto').textContent = '✨ 一键去除 ' + top.cfg.name + ' 水印';
   } else {
-    $('autoTitle').textContent = '没识别到已知的 AI 水印';
-    $('autoDesc').textContent = '这张图不是豆包 / Gemini / 千问生成的，或者水印被裁过、被压缩过。' +
-      '可以点"手动指定类型"试试，或者用下面的涂抹方式手动去除。';
+    $('autoTitle').textContent = '没匹配到预置的 AI 水印模板';
+    $('autoDesc').textContent = '预置模板只覆盖豆包/Gemini/千问"生成图"的那种实心水印。' +
+      '如果是 App 里导出的描边文字水印（比如右下角那种"豆包 AI 生成"），' +
+      '点下面的"智能框选右下角"，会自动找出笔画再去掉。';
     $('btnAuto').style.display = 'none';
   }
 }
