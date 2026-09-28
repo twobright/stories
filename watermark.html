@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>去水印工具</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+:root {
+  --bg: #1A1A2E;
+  --card: #16213E;
+  --accent: #FF6B9D;
+  --text: #E8E8E8;
+  --text-dim: #8892A4;
+  --radius: 12px;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding-bottom: 30px;
+}
+.page { max-width: 900px; margin: 0 auto; }
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; position: sticky; top: 0; background: var(--bg);
+  z-index: 20; border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.header h1 { font-size: 18px; color: var(--accent); }
+.back-btn {
+  background: none; border: none; color: var(--text); cursor: pointer;
+  font-size: 15px; padding: 6px 10px; border-radius: 8px;
+}
+.back-btn:hover { background: rgba(255,255,255,0.08); }
+
+.section { padding: 14px 16px; }
+.tip {
+  background: rgba(255,107,157,0.1); border: 1px solid rgba(255,107,157,0.3);
+  border-radius: var(--radius); padding: 12px 14px; font-size: 13px;
+  line-height: 1.7; color: var(--text-dim); margin-bottom: 14px;
+}
+.tip b { color: var(--accent); }
+
+.upload-area {
+  border: 2px dashed rgba(255,107,157,0.5); border-radius: var(--radius);
+  padding: 36px 20px; text-align: center; cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.upload-area:hover { background: rgba(255,107,157,0.06); border-color: var(--accent); }
+.upload-area .big { font-size: 40px; margin-bottom: 8px; }
+.upload-area .t1 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.upload-area .t2 { font-size: 12px; color: var(--text-dim); }
+
+.canvas-wrap {
+  position: relative; background: #0f1020; border-radius: var(--radius);
+  overflow: hidden; touch-action: none; margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: center; min-height: 200px;
+}
+canvas { display: block; max-width: 100%; touch-action: none; }
+#maskCanvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+}
+.btn {
+  padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12);
+  background: var(--card); color: var(--text); font-size: 14px; cursor: pointer;
+  transition: all 0.2s; flex-shrink: 0;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover:not(:disabled) { background: #ff5089; color: #fff; }
+.btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.row label { font-size: 13px; color: var(--text-dim); white-space: nowrap; }
+input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+.val { font-size: 13px; color: var(--accent); min-width: 42px; text-align: right; }
+
+.status {
+  font-size: 13px; color: var(--text-dim); padding: 8px 0; min-height: 22px;
+}
+.status.busy { color: var(--accent); }
+.hidden { display: none !important; }
+.mode-hint { font-size: 12px; color: var(--text-dim); margin-bottom: 10px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="header">
+    <button class="back-btn" onclick="goBack()">‹ 返回</button>
+    <h1>🧽 去水印工具</h1>
+    <div style="width:52px"></div>
+  </header>
+
+  <div class="section">
+    <div class="tip">
+      <b>说明：</b>图片只在你的手机/电脑本地处理，<b>不会上传到任何地方</b>。<br>
+      <b>用法：</b>①选图 ②用手指或鼠标涂抹水印位置（涂成红色）③点"开始去水印" ④保存到本地。<br>
+      <b>提示：</b>文字水印、纯色/渐变背景（天空、墙面）效果最好；复杂花纹背景可能留下轻微痕迹。水印在边角的话，用"裁剪"最干净。
+    </div>
+
+    <!-- 上传区 -->
+    <div id="uploadArea" class="upload-area" onclick="document.getElementById('fileInput').click()">
+      <div class="big">🖼️</div>
+      <div class="t1">点击选择图片</div>
+      <div class="t2">支持 JPG / PNG / WebP</div>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="onPickFile(event)">
+
+    <!-- 编辑区 -->
+    <div id="editor" class="hidden">
+      <div class="mode-hint" id="modeHint">当前：涂抹模式 — 涂抹要去掉的水印区域</div>
+
+      <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="mainCanvas"></canvas>
+        <canvas id="maskCanvas"></canvas>
+      </div>
+
+      <div class="row">
+        <label>笔刷</label>
+        <input type="range" id="brushSize" min="5" max="80" value="24" oninput="onBrushChange()">
+        <span class="val" id="brushVal">24</span>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn active" id="btnBrush" onclick="setMode('brush')">✏️ 涂抹</button>
+        <button class="btn" id="btnErase" onclick="setMode('erase')">🩹 擦除标记</button>
+        <button class="btn" id="btnCrop" onclick="setMode('crop')">✂️ 裁剪</button>
+        <button class="btn" onclick="clearMask()">清空标记</button>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn primary" id="btnRun" onclick="runInpaint()">开始去水印</button>
+        <button class="btn" id="btnCropApply" onclick="applyCrop()" style="display:none">应用裁剪</button>
+        <button class="btn" id="btnUndo" onclick="undo()" disabled>↩ 撤销</button>
+        <button class="btn" onclick="resetImage()">重置原图</button>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn primary" onclick="saveImage()">💾 保存到本地</button>
+        <button class="btn" onclick="pickAnother()">换一张图</button>
+      </div>
+
+      <div class="status" id="status"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== 状态 ====================
+let img = null;              // 原始 ImageBitmap/Image
+let mainCanvas, mainCtx;     // 主画布（当前图像）
+let maskCanvas, maskCtx;     // 标记层（红色涂抹）
+let displayScale = 1;        // 显示缩放比（canvas像素 -> CSS像素）
+let mode = 'brush';          // brush | erase | crop
+let isDrawing = false;
+let undoStack = [];          // 撤销栈（ImageData）
+let cropRect = null;         // 裁剪框 {x,y,w,h} 画布坐标
+let cropDragStart = null;
+const MAX_UNDO = 8;
+const MAX_SIDE = 2400;       // 超大图缩边，避免卡顿
+
+function $(id) { return document.getElementById(id); }
+
+function goBack() {
+  if (history.length > 1) history.back();
+  else location.href = 'index.html';
+}
+
+function setStatus(msg, busy) {
+  const el = $('status');
+  el.textContent = msg || '';
+  el.className = 'status' + (busy ? ' busy' : '');
+}
+
+// ==================== 载入图片 ====================
+function pickAnother() { $('fileInput').click(); }
+
+async function onPickFile(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  setStatus('正在载入图片…', true);
+  try {
+    let bitmap;
+    if (window.createImageBitmap) {
+      // createImageBitmap 会自动处理手机照片的旋转信息
+      try {
+        bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      } catch (err) {
+        bitmap = await createImageBitmap(file);
+      }
+    } else {
+      bitmap = await loadViaImgTag(file);
+    }
+    setupCanvas(bitmap);
+    setStatus('图片已载入，涂抹要去掉的水印区域');
+  } catch (err) {
+    setStatus('图片载入失败：' + err.message);
+  }
+  e.target.value = '';
+}
+
+function loadViaImgTag(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => { URL.revokeObjectURL(url); resolve(im); };
+    im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('无法解析该图片')); };
+    im.src = url;
+  });
+}
+
+function setupCanvas(bitmap) {
+  mainCanvas = $('mainCanvas');
+  maskCanvas = $('maskCanvas');
+  mainCtx = mainCanvas.getContext('2d', { willReadFrequently: true });
+  maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+
+  let w = bitmap.width, h = bitmap.height;
+  // 超大图等比缩小，保证处理速度
+  if (Math.max(w, h) > MAX_SIDE) {
+    const r = MAX_SIDE / Math.max(w, h);
+    w = Math.round(w * r); h = Math.round(h * r);
+  }
+  mainCanvas.width = w; mainCanvas.height = h;
+  maskCanvas.width = w; maskCanvas.height = h;
+  mainCtx.clearRect(0, 0, w, h);
+  mainCtx.drawImage(bitmap, 0, 0, w, h);
+  img = bitmap;
+
+  clearMask();
+  undoStack = [];
+  updateUndoBtn();
+  cropRect = null;
+
+  $('uploadArea').classList.add('hidden');
+  $('editor').classList.remove('hidden');
+
+  fitCanvasDisplay();
+  bindPointer();
+}
+
+function fitCanvasDisplay() {
+  // 让画布按容器宽度显示，记录缩放比用于坐标换算
+  const wrap = $('canvasWrap');
+  const maxW = wrap.clientWidth || 360;
+  const cssW = Math.min(mainCanvas.width, maxW);
+  const scale = cssW / mainCanvas.width;
+  const cssH = Math.round(mainCanvas.height * scale);
+  mainCanvas.style.width = cssW + 'px';
+  mainCanvas.style.height = cssH + 'px';
+  maskCanvas.style.width = cssW + 'px';
+  maskCanvas.style.height = cssH + 'px';
+  // mask 覆盖在 main 之上，位置对齐
+  maskCanvas.style.left = ((wrap.clientWidth - cssW) / 2) + 'px';
+  maskCanvas.style.top = ((wrap.clientHeight - cssH) / 2) + 'px';
+  displayScale = scale;
+}
+
+window.addEventListener('resize', () => { if (mainCanvas) fitCanvasDisplay(); });
+
+// ==================== 模式切换 ====================
+function setMode(m) {
+  mode = m;
+  ['btnBrush', 'btnErase', 'btnCrop'].forEach(id => $(id).classList.remove('active'));
+  if (m === 'brush') $('btnBrush').classList.add('active');
+  if (m === 'erase') $('btnErase').classList.add('active');
+  if (m === 'crop') $('btnCrop').classList.add('active');
+
+  const hints = {
+    brush: '当前：涂抹模式 — 涂抹要去掉的水印区域（涂成红色）',
+    erase: '当前：擦除标记 — 擦掉涂错的红色标记',
+    crop: '当前：裁剪模式 — 拖动框选要保留的区域，然后点"应用裁剪"'
+  };
+  $('modeHint').textContent = hints[m];
+  $('btnRun').style.display = (m === 'crop') ? 'none' : '';
+  $('btnCropApply').style.display = (m === 'crop') ? '' : 'none';
+
+  if (m === 'crop') { cropRect = null; redrawMask(); }
+}
+
+function onBrushChange() {
+  $('brushVal').textContent = $('brushSize').value;
+}
+
+// ==================== 指针绘制 ====================
+function bindPointer() {
+  const el = maskCanvas.parentElement; // canvasWrap，保证覆盖层也能接到事件
+  if (el.dataset.bound) return;
+  el.dataset.bound = '1';
+  el.addEventListener('pointerdown', onPointerDown);
+  el.addEventListener('pointermove', onPointerMove);
+  el.addEventListener('pointerup', onPointerUp);
+  el.addEventListener('pointercancel', onPointerUp);
+  el.addEventListener('pointerleave', onPointerUp);
+}
+
+function getCanvasPos(e) {
+  const rect = mainCanvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / displayScale;
+  const y = (e.clientY - rect.top) / displayScale;
+  return { x, y };
+}
+
+function onPointerDown(e) {
+  if (!mainCanvas) return;
+  e.preventDefault();
+  isDrawing = true;
+  const p = getCanvasPos(e);
+  if (mode === 'crop') {
+    cropDragStart = p;
+    cropRect = { x: p.x, y: p.y, w: 0, h: 0 };
+  } else {
+    paintAt(p.x, p.y, mode === 'erase');
+  }
+}
+
+function onPointerMove(e) {
+  if (!isDrawing || !mainCanvas) return;
+  e.preventDefault();
+  const p = getCanvasPos(e);
+  if (mode === 'crop') {
+    if (!cropDragStart) return;
+    cropRect = {
+      x: Math.min(cropDragStart.x, p.x),
+      y: Math.min(cropDragStart.y, p.y),
+      w: Math.abs(p.x - cropDragStart.x),
+      h: Math.abs(p.y - cropDragStart.y)
+    };
+    redrawMask();
+  } else {
+    paintAt(p.x, p.y, mode === 'erase');
+  }
+}
+
+function onPointerUp() {
+  isDrawing = false;
+  cropDragStart = null;
+}
+
+function paintAt(x, y, erase) {
+  const r = parseInt($('brushSize').value, 10) / 2;
+  maskCtx.save();
+  if (erase) {
+    maskCtx.globalCompositeOperation = 'destination-out';
+    maskCtx.beginPath();
+    maskCtx.arc(x, y, r, 0, Math.PI * 2);
+    maskCtx.fill();
+  } else {
+    maskCtx.globalCompositeOperation = 'source-over';
+    maskCtx.fillStyle = 'rgba(255,60,90,0.55)';
+    maskCtx.beginPath();
+    maskCtx.arc(x, y, r, 0, Math.PI * 2);
+    maskCtx.fill();
+  }
+  maskCtx.restore();
+}
+
+function clearMask() {
+  if (!maskCtx) return;
+  maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+  cropRect = null;
+}
+
+function redrawMask() {
+  // 裁剪模式下，用遮罩显示选区
+  maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+  if (mode === 'crop' && cropRect && cropRect.w > 2 && cropRect.h > 2) {
+    maskCtx.fillStyle = 'rgba(0,0,0,0.55)';
+    maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+    maskCtx.clearRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+    maskCtx.strokeStyle = '#FF6B9D';
+    maskCtx.lineWidth = 2 / displayScale;
+    maskCtx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h);
+  }
+}
+
+// ==================== 撤销 ====================
+function pushUndo() {
+  try {
+    const snap = mainCtx.getImageData(0, 0, mainCanvas.width, mainCanvas.height);
+    undoStack.push({ data: snap, w: mainCanvas.width, h: mainCanvas.height });
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    updateUndoBtn();
+  } catch (e) { /* 忽略 */ }
+}
+
+function undo() {
+  if (!undoStack.length) return;
+  const snap = undoStack.pop();
+  mainCanvas.width = snap.w; mainCanvas.height = snap.h;
+  maskCanvas.width = snap.w; maskCanvas.height = snap.h;
+  mainCtx.putImageData(snap.data, 0, 0);
+  clearMask();
+  fitCanvasDisplay();
+  updateUndoBtn();
+  setStatus('已撤销');
+}
+
+function updateUndoBtn() {
+  $('btnUndo').disabled = undoStack.length === 0;
+}
+
+function resetImage() {
+  if (!img) return;
+  pushUndo();
+  let w = img.width, h = img.height;
+  if (Math.max(w, h) > MAX_SIDE) {
+    const r = MAX_SIDE / Math.max(w, h);
+    w = Math.round(w * r); h = Math.round(h * r);
+  }
+  mainCanvas.width = w; mainCanvas.height = h;
+  maskCanvas.width = w; maskCanvas.height = h;
+  mainCtx.clearRect(0, 0, w, h);
+  mainCtx.drawImage(img, 0, 0, w, h);
+  clearMask();
+  fitCanvasDisplay();
+  setStatus('已恢复原图');
+}
+
+// ==================== 裁剪 ====================
+function applyCrop() {
+  if (!cropRect || cropRect.w < 4 || cropRect.h < 4) {
+    setStatus('请先拖动框选要保留的区域');
+    return;
+  }
+  pushUndo();
+  const x = Math.max(0, Math.round(cropRect.x));
+  const y = Math.max(0, Math.round(cropRect.y));
+  const w = Math.min(mainCanvas.width - x, Math.round(cropRect.w));
+  const h = Math.min(mainCanvas.height - y, Math.round(cropRect.h));
+  const cut = mainCtx.getImageData(x, y, w, h);
+
+  mainCanvas.width = w; mainCanvas.height = h;
+  maskCanvas.width = w; maskCanvas.height = h;
+  mainCtx.putImageData(cut, 0, 0);
+  clearMask();
+  fitCanvasDisplay();
+  setMode('brush');
+  setStatus('裁剪完成：' + w + '×' + h);
+}
+
+// ==================== 去水印（扩散填充 / Inpainting） ====================
+function nextFrame() {
+  return new Promise(resolve => {
+    if (window.requestAnimationFrame) requestAnimationFrame(() => resolve());
+    else setTimeout(resolve, 16);
+  });
+}
+
+// 把标记层的红色区域转成 mask，并向外扩 1 像素（吃掉水印的半透明边缘）
+function buildMask(w, h) {
+  const md = maskCtx.getImageData(0, 0, w, h).data;
+  const raw = new Uint8Array(w * h);
+  let n = 0;
+  for (let i = 0, p = 3; i < raw.length; i++, p += 4) {
+    if (md[p] > 20) { raw[i] = 1; n++; }
+  }
+  if (!n) return { mask: raw, count: 0 };
+
+  // 膨胀 1 像素
+  const mask = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (raw[i]) { mask[i] = 1; continue; }
+      if ((x > 0 && raw[i - 1]) || (x < w - 1 && raw[i + 1]) ||
+          (y > 0 && raw[i - w]) || (y < h - 1 && raw[i + w])) {
+        mask[i] = 1;
+      }
+    }
+  }
+  let count = 0;
+  for (let i = 0; i < mask.length; i++) if (mask[i]) count++;
+  return { mask, count };
+}
+
+async function runInpaint() {
+  if (!mainCanvas) return;
+  if (mode === 'crop') { setStatus('裁剪模式下请点"应用裁剪"'); return; }
+
+  const w = mainCanvas.width, h = mainCanvas.height;
+  const built = buildMask(w, h);
+  if (!built.count) {
+    setStatus('请先涂抹要去掉的水印区域');
+    return;
+  }
+  if (built.count > w * h * 0.6) {
+    setStatus('涂抹范围太大了，没有足够的周边像素可以参考');
+    return;
+  }
+
+  const btn = $('btnRun');
+  btn.disabled = true;
+  setStatus('正在处理…（涂抹面积越大越慢，请稍等）', true);
+  await nextFrame();
+
+  try {
+    const mask = built.mask;
+    const imgData = mainCtx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+
+    // 待处理像素索引表
+    const todo = new Int32Array(built.count);
+    let t = 0;
+    for (let i = 0; i < mask.length; i++) if (mask[i]) todo[t++] = i;
+
+    // ---------- 第一步：用四个方向最近的已知像素做距离加权初始化 ----------
+    for (let k = 0; k < todo.length; k++) {
+      const i = todo[k];
+      const x = i % w, y = (i - x) / w;
+      let sr = 0, sg = 0, sb = 0, sw = 0;
+
+      // 左
+      for (let xx = x - 1; xx >= 0; xx--) {
+        if (!mask[y * w + xx]) {
+          const wt = 1 / (x - xx), p = (y * w + xx) * 4;
+          sr += d[p] * wt; sg += d[p + 1] * wt; sb += d[p + 2] * wt; sw += wt;
+          break;
+        }
+      }
+      // 右
+      for (let xx = x + 1; xx < w; xx++) {
+        if (!mask[y * w + xx]) {
+          const wt = 1 / (xx - x), p = (y * w + xx) * 4;
+          sr += d[p] * wt; sg += d[p + 1] * wt; sb += d[p + 2] * wt; sw += wt;
+          break;
+        }
+      }
+      // 上
+      for (let yy = y - 1; yy >= 0; yy--) {
+        if (!mask[yy * w + x]) {
+          const wt = 1 / (y - yy), p = (yy * w + x) * 4;
+          sr += d[p] * wt; sg += d[p + 1] * wt; sb += d[p + 2] * wt; sw += wt;
+          break;
+        }
+      }
+      // 下
+      for (let yy = y + 1; yy < h; yy++) {
+        if (!mask[yy * w + x]) {
+          const wt = 1 / (yy - y), p = (yy * w + x) * 4;
+          sr += d[p] * wt; sg += d[p + 1] * wt; sb += d[p + 2] * wt; sw += wt;
+          break;
+        }
+      }
+
+      const p = i * 4;
+      if (sw > 0) {
+        d[p] = sr / sw; d[p + 1] = sg / sw; d[p + 2] = sb / sw;
+      }
+      d[p + 3] = 255;
+
+      if ((k & 0x3FFF) === 0x3FFF) {
+        setStatus('正在处理…填充 ' + Math.round(k / todo.length * 100) + '%', true);
+        await nextFrame();
+      }
+    }
+
+    // ---------- 第二步：多轮邻域平滑（Gauss-Seidel），让填充和周边自然融合 ----------
+    const PASSES = 60;
+    for (let pass = 0; pass < PASSES; pass++) {
+      // 奇数轮反向扫描，收敛更均匀
+      const rev = (pass & 1) === 1;
+      for (let k = 0; k < todo.length; k++) {
+        const i = todo[rev ? todo.length - 1 - k : k];
+        const x = i % w, y = (i - x) / w;
+        let sr = 0, sg = 0, sb = 0, c = 0;
+        if (x > 0) { const p = (i - 1) * 4; sr += d[p]; sg += d[p + 1]; sb += d[p + 2]; c++; }
+        if (x < w - 1) { const p = (i + 1) * 4; sr += d[p]; sg += d[p + 1]; sb += d[p + 2]; c++; }
+        if (y > 0) { const p = (i - w) * 4; sr += d[p]; sg += d[p + 1]; sb += d[p + 2]; c++; }
+        if (y < h - 1) { const p = (i + w) * 4; sr += d[p]; sg += d[p + 1]; sb += d[p + 2]; c++; }
+        if (!c) continue;
+        const p = i * 4;
+        d[p] = sr / c; d[p + 1] = sg / c; d[p + 2] = sb / c;
+      }
+      if ((pass & 7) === 7) {
+        setStatus('正在处理…融合 ' + Math.round((pass + 1) / PASSES * 100) + '%', true);
+        await nextFrame();
+      }
+    }
+
+    pushUndo();
+    mainCtx.putImageData(imgData, 0, 0);
+    clearMask();
+    setStatus('去水印完成，可以保存到本地了。效果不理想可以再涂一次，或用"裁剪"。');
+  } catch (err) {
+    setStatus('处理失败：' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ==================== 保存 ====================
+function saveImage() {
+  if (!mainCanvas) return;
+  const name = '去水印_' + Date.now() + '.png';
+
+  const finish = (url, revoke) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    if (revoke) setTimeout(() => URL.revokeObjectURL(url), 5000);
+    setStatus('已保存：' + name + '（如果没反应，长按图片另存也可以）');
+  };
+
+  try {
+    if (mainCanvas.toBlob) {
+      mainCanvas.toBlob(blob => {
+        if (!blob) { finish(mainCanvas.toDataURL('image/png'), false); return; }
+        finish(URL.createObjectURL(blob), true);
+      }, 'image/png');
+    } else {
+      finish(mainCanvas.toDataURL('image/png'), false);
+    }
+  } catch (err) {
+    setStatus('保存失败：' + err.message);
+  }
+}
+</script>
+</body>
+</html>
