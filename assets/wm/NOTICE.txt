@@ -1,0 +1,14 @@
+本目录下的水印模板 PNG（bg_48.png、bg_96.png、doubao_bg_1x1.png、
+doubao_bg_2x3.png、doubao_bg_3x2.png、qwen_bg_1x1.png）以及所用的
+"反向 Alpha 混合"去水印算法，来自开源项目：
+
+  lsj-watermark-remover
+  https://github.com/RusianHu/lsj-watermark-remover
+  作者：RusianHu
+  许可证：Apache License 2.0
+
+本项目在 Apache License 2.0 许可下使用上述模板与算法思路，并做了改动：
+  1. 增加基于"去除前后边缘能量变化"的水印类型自动识别（原项目由用户手选类型）；
+  2. 与手动涂抹修补、裁剪、手机长按保存等功能整合进单页工具。
+
+Apache License 2.0 全文见：http://www.apache.org/licenses/LICENSE-2.0

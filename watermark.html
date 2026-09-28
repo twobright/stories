@@ -86,6 +86,22 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
 .hidden { display: none !important; }
 .mode-hint { font-size: 12px; color: var(--text-dim); margin-bottom: 10px; line-height: 1.6; }
 
+/* 自动识别面板 */
+.auto-box {
+  background: rgba(80,200,140,0.10); border: 1px solid rgba(80,200,140,0.5);
+  border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px;
+}
+.auto-box.miss { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.14); }
+.auto-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #5FD3A0; }
+.auto-box.miss .auto-title { color: var(--text-dim); }
+.auto-desc { font-size: 12px; color: var(--text-dim); line-height: 1.7; margin-bottom: 10px; }
+
+.credit {
+  font-size: 11px; color: var(--text-dim); text-align: center;
+  padding: 18px 16px 4px; line-height: 1.8;
+}
+.credit a { color: var(--accent); text-decoration: none; }
+
 /* 结果面板：给手机长按保存用 */
 .result-panel { margin-top: 6px; }
 .save-hint {
@@ -114,9 +130,9 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
   <div class="section">
     <div class="tip">
       <b>说明：</b>图片只在你的手机/电脑本地处理，<b>不会上传到任何地方</b>。<br>
-      <b>用法：</b>①选图 ②用手指或鼠标涂抹水印位置（涂成红色）③点"开始去水印" ④保存到本地。<br>
-      <b>手机保存：</b>点"保存到本地"后，页面底部会出现处理好的图，<b>长按那张图</b> → 「存储到照片」才会进相册。Safari 的"下载"只会存到「文件」App，不进相册。<br>
-      <b>提示：</b>文字水印、纯色/渐变背景（天空、墙面）效果最好；复杂花纹背景可能留下轻微痕迹。水印在边角的话，用"裁剪"最干净。
+      <b>AI 生成图（豆包 / Gemini / 千问）：</b>选图后会<b>自动识别并一键还原</b>，效果几乎无痕。<br>
+      <b>其他水印：</b>手动涂抹水印位置，再点"开始去水印"。<br>
+      <b>手机保存：</b>点"保存到本地"后，页面底部会出现处理好的图，<b>长按那张图</b> → 「存储到照片」才会进相册。Safari 的"下载"只会存到「文件」App，不进相册。
     </div>
 
     <!-- 上传区 -->
@@ -129,6 +145,22 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
 
     <!-- 编辑区 -->
     <div id="editor" class="hidden">
+
+      <!-- 自动识别：豆包 / Gemini / 千问 等 AI 生成图的固定水印 -->
+      <div class="auto-box" id="autoBox">
+        <div class="auto-title" id="autoTitle">正在识别水印…</div>
+        <div class="auto-desc" id="autoDesc"></div>
+        <div class="toolbar" style="margin-bottom:0">
+          <button class="btn primary" id="btnAuto" onclick="runAutoRemove()">✨ 一键去除</button>
+          <button class="btn" id="btnAutoPick" onclick="toggleAutoPicker()">手动指定类型</button>
+        </div>
+        <div class="toolbar hidden" id="autoPicker" style="margin-top:8px;margin-bottom:0">
+          <button class="btn" onclick="runAutoRemove('doubao')">豆包</button>
+          <button class="btn" onclick="runAutoRemove('gemini')">Gemini</button>
+          <button class="btn" onclick="runAutoRemove('qwen')">千问</button>
+        </div>
+      </div>
+
       <div class="mode-hint" id="modeHint">当前：涂抹模式 — 涂抹要去掉的水印区域</div>
 
       <div class="canvas-wrap" id="canvasWrap">
@@ -172,6 +204,12 @@ input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
         <img id="resultImg" alt="处理结果">
       </div>
     </div>
+
+    <div class="credit">
+      AI 水印模板与"反向 Alpha 混合"算法来自开源项目
+      <a href="https://github.com/RusianHu/lsj-watermark-remover" target="_blank" rel="noopener">lsj-watermark-remover</a>
+      （Apache-2.0，作者 RusianHu）
+    </div>
   </div>
 </div>
 
@@ -186,8 +224,10 @@ let isDrawing = false;
 let undoStack = [];          // 撤销栈（ImageData）
 let cropRect = null;         // 裁剪框 {x,y,w,h} 画布坐标
 let cropDragStart = null;
-const MAX_UNDO = 8;
-const MAX_SIDE = 2400;       // 超大图缩边，避免卡顿
+const MAX_UNDO = 4;
+// 注意：豆包 2048~2508、千问 1328、Gemini 1024/2048 这些常见尺寸都不能被缩放，
+// 否则水印像素被重采样，反向 alpha 还原就不准了。所以阈值放到 4096。
+const MAX_SIDE = 4096;
 
 function $(id) { return document.getElementById(id); }
 
@@ -278,6 +318,12 @@ function setupCanvas(bitmap) {
 
   fitCanvasDisplay();
   bindPointer();
+
+  // 自动识别 AI 生成图的固定水印
+  detectWatermark().catch(err => {
+    $('autoTitle').textContent = '自动识别不可用';
+    $('autoDesc').textContent = err.message + '，可以用涂抹方式手动去除。';
+  });
 }
 
 function fitCanvasDisplay() {
@@ -518,9 +564,10 @@ function buildMask(w, h) {
   return { mask, count };
 }
 
-async function runInpaint() {
+async function runInpaint(opts) {
+  opts = opts || {};
   if (!mainCanvas) return;
-  if (mode === 'crop') { setStatus('裁剪模式下请点"应用裁剪"'); return; }
+  if (!opts.internal && mode === 'crop') { setStatus('裁剪模式下请点"应用裁剪"'); return; }
 
   const w = mainCanvas.width, h = mainCanvas.height;
   const built = buildMask(w, h);
@@ -535,8 +582,10 @@ async function runInpaint() {
 
   const btn = $('btnRun');
   btn.disabled = true;
-  hideResult();
-  setStatus('正在处理…（涂抹面积越大越慢，请稍等）', true);
+  if (!opts.internal) {
+    hideResult();
+    setStatus('正在处理…（涂抹面积越大越慢，请稍等）', true);
+  }
   await nextFrame();
 
   try {
@@ -595,7 +644,8 @@ async function runInpaint() {
       d[p + 3] = 255;
 
       if ((k & 0x3FFF) === 0x3FFF) {
-        setStatus('正在处理…填充 ' + Math.round(k / todo.length * 100) + '%', true);
+        setStatus((opts.internal ? '正在精修水印笔画…' : '正在处理…填充 ') +
+                  Math.round(k / todo.length * 100) + '%', true);
         await nextFrame();
       }
     }
@@ -618,19 +668,395 @@ async function runInpaint() {
         d[p] = sr / c; d[p + 1] = sg / c; d[p + 2] = sb / c;
       }
       if ((pass & 7) === 7) {
-        setStatus('正在处理…融合 ' + Math.round((pass + 1) / PASSES * 100) + '%', true);
+        setStatus((opts.internal ? '正在精修水印笔画…融合 ' : '正在处理…融合 ') +
+                  Math.round((pass + 1) / PASSES * 100) + '%', true);
         await nextFrame();
       }
     }
 
-    pushUndo();
+    if (!opts.internal) pushUndo();
     mainCtx.putImageData(imgData, 0, 0);
     clearMask();
-    setStatus('去水印完成，可以保存到本地了。效果不理想可以再涂一次，或用"裁剪"。');
+    if (!opts.internal) {
+      setStatus('去水印完成，可以保存到本地了。效果不理想可以再涂一次，或用"裁剪"。');
+    }
   } catch (err) {
     setStatus('处理失败：' + err.message);
   } finally {
     btn.disabled = false;
+  }
+}
+
+/* ==================================================================
+   自动去除 AI 生成图水印（豆包 / Gemini / 千问）
+
+   原理：这类水印是固定位置、固定形状的白色半透明图层，
+         带水印图 = α×255 + (1-α)×原图
+   所以只要知道 α（水印的透明度分布），就能精确反解出原图：
+         原图 = (带水印图 - α×255) / (1-α)
+   α 来自预置模板 PNG（水印画在纯黑底上的截图，亮度就是 α×255）。
+
+   水印模板 PNG 与该算法来自开源项目 lsj-watermark-remover
+   https://github.com/RusianHu/lsj-watermark-remover
+   作者 RusianHu，Apache License 2.0。
+   本文件在此基础上增加了"水印类型自动识别"。
+   ================================================================== */
+
+const WM_TPL_DIR = 'assets/wm/';
+const WM_TPL_FILES = {
+  gemini48: 'bg_48.png',
+  gemini96: 'bg_96.png',
+  doubao1x1: 'doubao_bg_1x1.png',
+  doubao2x3: 'doubao_bg_2x3.png',
+  doubao3x2: 'doubao_bg_3x2.png',
+  qwen: 'qwen_bg_1x1.png'
+};
+
+// 各类水印的基准尺寸（都是从真实生成图上量出来的）
+const DOUBAO_CONFIGS = {
+  '1x1': { refShort: 2048, wmWidth: 282, wmHeight: 123, marginRight: 57, marginBottom: 54, tpl: 'doubao1x1' },
+  '2x3': { refShort: 1672, wmWidth: 225, wmHeight: 43,  marginRight: 50, marginBottom: 50, tpl: 'doubao2x3' },
+  '3x2': { refShort: 1672, wmWidth: 296, wmHeight: 71,  marginRight: 53, marginBottom: 53, tpl: 'doubao3x2' }
+};
+const QWEN_CONFIG = { refShort: 1328, wmWidth: 234, wmHeight: 46, marginRight: 28, marginBottom: 30, tpl: 'qwen' };
+
+// Gemini：短边 ≤1024 用 48px，≤2048 用 96px，更大按线性插值
+const GEMINI_SCALING = {
+  sizeSlope: 0.0762376, sizeIntercept: -60.15,
+  marginSlope: 0.0396040, marginIntercept: -17.11
+};
+
+const wmTemplates = {};       // 已加载的模板 Image
+const wmAlphaCache = {};      // alpha map 缓存
+let autoCandidates = [];      // 当前图片的候选水印配置
+let autoBest = null;          // 识别出的最佳候选
+let lastNoiseRatio = 0;       // 上次处理时估算的噪点放大程度（调试用）
+
+function loadTemplate(key) {
+  if (wmTemplates[key]) return Promise.resolve(wmTemplates[key]);
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => { wmTemplates[key] = im; resolve(im); };
+    im.onerror = () => reject(new Error('模板加载失败：' + WM_TPL_FILES[key]));
+    im.src = WM_TPL_DIR + WM_TPL_FILES[key];
+  });
+}
+
+function geminiConfig(w, h) {
+  const shortEdge = Math.min(w, h);
+  if (shortEdge <= 1024) {
+    return { name: 'Gemini', type: 'gemini', wmWidth: 48, wmHeight: 48, marginRight: 32, marginBottom: 32, tpl: 'gemini48' };
+  }
+  if (shortEdge <= 2048) {
+    return { name: 'Gemini', type: 'gemini', wmWidth: 96, wmHeight: 96, marginRight: 64, marginBottom: 64, tpl: 'gemini96' };
+  }
+  const size = Math.round(GEMINI_SCALING.sizeSlope * shortEdge + GEMINI_SCALING.sizeIntercept);
+  const margin = Math.round(GEMINI_SCALING.marginSlope * shortEdge + GEMINI_SCALING.marginIntercept);
+  return { name: 'Gemini', type: 'gemini', wmWidth: size, wmHeight: size, marginRight: margin, marginBottom: margin, tpl: 'gemini96' };
+}
+
+function scaleConfig(cfg, w, h, name, type) {
+  const s = Math.min(w, h) / cfg.refShort;
+  return {
+    name: name, type: type, tpl: cfg.tpl,
+    wmWidth: Math.round(cfg.wmWidth * s),
+    wmHeight: Math.round(cfg.wmHeight * s),
+    marginRight: Math.round(cfg.marginRight * s),
+    marginBottom: Math.round(cfg.marginBottom * s)
+  };
+}
+
+function doubaoCategory(w, h) {
+  const r = w / h;
+  if (r < 0.8) return '2x3';
+  if (r > 1.2) return '3x2';
+  return '1x1';
+}
+
+// 列出这张图所有可能的水印候选（右下角）
+function buildCandidates(w, h) {
+  const list = [];
+  list.push(geminiConfig(w, h));
+  const cat = doubaoCategory(w, h);
+  list.push(scaleConfig(DOUBAO_CONFIGS[cat], w, h, '豆包', 'doubao'));
+  list.push(scaleConfig(QWEN_CONFIG, w, h, '千问', 'qwen'));
+  return list.map(c => {
+    c.x = w - c.marginRight - c.wmWidth;
+    c.y = h - c.marginBottom - c.wmHeight;
+    return c;
+  }).filter(c => c.x >= 0 && c.y >= 0 && c.wmWidth > 4 && c.wmHeight > 4);
+}
+
+// 取某个候选的 alpha map（模板缩放到目标尺寸，亮度/255 即 α）
+async function getAlphaMap(cfg) {
+  const key = cfg.tpl + '_' + cfg.wmWidth + 'x' + cfg.wmHeight;
+  if (wmAlphaCache[key]) return wmAlphaCache[key];
+  const tpl = await loadTemplate(cfg.tpl);
+  const cv = document.createElement('canvas');
+  cv.width = cfg.wmWidth; cv.height = cfg.wmHeight;
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  cx.imageSmoothingEnabled = true;
+  cx.imageSmoothingQuality = 'high';
+  cx.drawImage(tpl, 0, 0, tpl.width, tpl.height, 0, 0, cfg.wmWidth, cfg.wmHeight);
+  const d = cx.getImageData(0, 0, cfg.wmWidth, cfg.wmHeight).data;
+  const map = new Float32Array(cfg.wmWidth * cfg.wmHeight);
+  for (let i = 0; i < map.length; i++) {
+    const p = i * 4;
+    map[i] = Math.max(d[p], d[p + 1], d[p + 2]) / 255;
+  }
+  wmAlphaCache[key] = map;
+  return map;
+}
+
+// 反向 alpha 混合：在 rgb 数组（长度 w*h*4 的区域副本）上就地还原
+const WM_ALPHA_MIN = 0.002;
+const WM_ALPHA_MAX = 0.99;
+
+function reverseAlpha(region, alphaMap) {
+  for (let i = 0; i < alphaMap.length; i++) {
+    let a = alphaMap[i];
+    if (a < WM_ALPHA_MIN) continue;
+    if (a > WM_ALPHA_MAX) a = WM_ALPHA_MAX;
+    const inv = 1 - a;
+    const p = i * 4;
+    for (let c = 0; c < 3; c++) {
+      const v = (region[p + c] - a * 255) / inv;
+      region[p + c] = v < 0 ? 0 : (v > 255 ? 255 : v);
+    }
+  }
+}
+
+// 单个像素的反解值
+function revVal(v, a) {
+  if (a < WM_ALPHA_MIN) return v;
+  if (a > WM_ALPHA_MAX) a = WM_ALPHA_MAX;
+  const r = (v - a * 255) / (1 - a);
+  return r < 0 ? 0 : (r > 255 ? 255 : r);
+}
+
+// α 变化剧烈的位置就是水印的轮廓，识别只看这些点
+function alphaEdgeIndices(alphaMap, w, h) {
+  const idx = [];
+  for (let y = 0; y < h - 1; y++) {
+    for (let x = 0; x < w - 1; x++) {
+      const i = y * w + x;
+      const g = Math.abs(alphaMap[i] - alphaMap[i + 1]) + Math.abs(alphaMap[i] - alphaMap[i + w]);
+      if (g > 0.08) idx.push(i);
+    }
+  }
+  return idx;
+}
+
+// 取一块带边距的区域，用于在小范围内试对齐
+function getPaddedRegion(cfg, pad) {
+  const x0 = Math.max(0, cfg.x - pad);
+  const y0 = Math.max(0, cfg.y - pad);
+  const x1 = Math.min(mainCanvas.width, cfg.x + cfg.wmWidth + pad);
+  const y1 = Math.min(mainCanvas.height, cfg.y + cfg.wmHeight + pad);
+  const pw = x1 - x0, ph = y1 - y0;
+  if (pw < cfg.wmWidth || ph < cfg.wmHeight) return null;
+  return { x0: x0, y0: y0, pw: pw, ph: ph, data: mainCtx.getImageData(x0, y0, pw, ph).data };
+}
+
+// 在 (ox,oy) 这个位置，算轮廓梯度能量；removal=true 时算"反解之后"的能量
+function edgeEnergyAt(buf, pw, ox, oy, w, edgeIdx, alphaMap, removal) {
+  let sum = 0;
+  for (let k = 0; k < edgeIdx.length; k++) {
+    const i = edgeIdx[k];
+    const x = i % w, y = (i - x) / w;
+    const p = ((oy + y) * pw + (ox + x)) * 4;
+    const pr = p + 4;              // 右邻居
+    const pd = p + pw * 4;         // 下邻居
+    if (removal) {
+      const a = alphaMap[i], ar = alphaMap[i + 1], ad = alphaMap[i + w];
+      for (let c = 0; c < 3; c++) {
+        const v = revVal(buf[p + c], a);
+        sum += Math.abs(v - revVal(buf[pr + c], ar)) + Math.abs(v - revVal(buf[pd + c], ad));
+      }
+    } else {
+      for (let c = 0; c < 3; c++) {
+        sum += Math.abs(buf[p + c] - buf[pr + c]) + Math.abs(buf[p + c] - buf[pd + c]);
+      }
+    }
+  }
+  return sum;
+}
+
+const WM_ALIGN_PAD = 3;   // 允许 ±3 像素的位置偏差（尺寸换算的取整误差、轻微裁剪）
+
+// 给一个候选打分：去除后轮廓能量下降得越多，说明越对。
+// 同时在 ±3 像素内找最佳对齐位置。
+async function scoreCandidate(cfg) {
+  const alphaMap = await getAlphaMap(cfg);
+  const w = cfg.wmWidth, h = cfg.wmHeight;
+  const allEdge = alphaEdgeIndices(alphaMap, w, h);
+  if (allEdge.length < 20) return { cfg: cfg, score: 0, alphaMap: alphaMap, dx: 0, dy: 0 };
+
+  const reg = getPaddedRegion(cfg, WM_ALIGN_PAD);
+  if (!reg) return { cfg: cfg, score: 0, alphaMap: alphaMap, dx: 0, dy: 0 };
+
+  // 轮廓点太多时抽样，保证手机上也快
+  let edgeIdx = allEdge;
+  if (allEdge.length > 4000) {
+    const step = Math.ceil(allEdge.length / 4000);
+    edgeIdx = [];
+    for (let i = 0; i < allEdge.length; i += step) edgeIdx.push(allEdge[i]);
+  }
+
+  const dxMin = reg.x0 - cfg.x, dxMax = reg.x0 + reg.pw - cfg.x - w;
+  const dyMin = reg.y0 - cfg.y, dyMax = reg.y0 + reg.ph - cfg.y - h;
+
+  let best = { score: -1, dx: 0, dy: 0 };
+  for (let dy = dyMin; dy <= dyMax; dy++) {
+    for (let dx = dxMin; dx <= dxMax; dx++) {
+      const ox = cfg.x + dx - reg.x0, oy = cfg.y + dy - reg.y0;
+      const before = edgeEnergyAt(reg.data, reg.pw, ox, oy, w, edgeIdx, alphaMap, false);
+      if (before < 1) continue;
+      const after = edgeEnergyAt(reg.data, reg.pw, ox, oy, w, edgeIdx, alphaMap, true);
+      const score = (before - after) / before;
+      if (score > best.score) best = { score: score, dx: dx, dy: dy };
+    }
+  }
+
+  return { cfg: cfg, score: Math.max(0, best.score), alphaMap: alphaMap, dx: best.dx, dy: best.dy };
+}
+
+// 估计"噪点被放大"的程度：比较水印实心处和背景处的局部粗糙度。
+// 无损 PNG 原图 → 两者差不多（比值接近 1）；JPEG 压缩过 → 实心处明显更糙。
+function noiseRatio(buf, w, h, alphaMap) {
+  let hiSum = 0, hiN = 0, loSum = 0, loN = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x, p = i * 4;
+      const a = alphaMap[i];
+      let rough = 0;
+      for (let c = 0; c < 3; c++) {
+        const avg = (buf[p - 4 + c] + buf[p + 4 + c] + buf[p - w * 4 + c] + buf[p + w * 4 + c]) / 4;
+        rough += Math.abs(buf[p + c] - avg);
+      }
+      if (a >= 0.8) { hiSum += rough; hiN++; }
+      else if (a < 0.03) { loSum += rough; loN++; }
+    }
+  }
+  if (hiN < 20 || loN < 20) return 1;
+  const hi = hiSum / hiN, lo = loSum / loN;
+  return hi / Math.max(lo, 0.5);
+}
+
+
+const AUTO_SCORE_MIN = 0.28;        // 低于这个分就认为没有该类型水印
+const AUTO_NOISE_THRESHOLD = 1.8;   // 噪点放大到这个程度，就改用扩散填充重建笔画
+const AUTO_DIFFUSE_ALPHA = 0.6;     // α 高于此值的像素视为"原始信息已丢失"
+
+async function detectWatermark() {
+  autoBest = null;
+  autoCandidates = buildCandidates(mainCanvas.width, mainCanvas.height);
+  const box = $('autoBox');
+  box.classList.remove('hidden');
+  box.classList.add('miss');
+  $('autoTitle').textContent = '正在识别水印…';
+  $('autoDesc').textContent = '';
+  $('btnAuto').style.display = 'none';
+  $('autoPicker').classList.add('hidden');
+
+  let results = [];
+  try {
+    for (const cfg of autoCandidates) {
+      results.push(await scoreCandidate(cfg));
+    }
+  } catch (err) {
+    $('autoTitle').textContent = '自动识别不可用';
+    $('autoDesc').textContent = err.message + '，请用下面的涂抹方式手动去除。';
+    return;
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  const top = results[0];
+
+  if (top && top.score >= AUTO_SCORE_MIN) {
+    autoBest = top;
+    box.classList.remove('miss');
+    $('autoTitle').textContent = '✅ 识别到 ' + top.cfg.name + ' 水印';
+    $('autoDesc').textContent = '位置：右下角 ' + top.cfg.wmWidth + '×' + top.cfg.wmHeight +
+      '（把握度 ' + Math.round(top.score * 100) + '%）。点"一键去除"精确还原，几乎无痕。';
+    $('btnAuto').style.display = '';
+    $('btnAuto').textContent = '✨ 一键去除 ' + top.cfg.name + ' 水印';
+  } else {
+    $('autoTitle').textContent = '没识别到已知的 AI 水印';
+    $('autoDesc').textContent = '这张图不是豆包 / Gemini / 千问生成的，或者水印被裁过、被压缩过。' +
+      '可以点"手动指定类型"试试，或者用下面的涂抹方式手动去除。';
+    $('btnAuto').style.display = 'none';
+  }
+}
+
+function toggleAutoPicker() {
+  $('autoPicker').classList.toggle('hidden');
+}
+
+// 执行自动去除；type 为空则用识别结果
+async function runAutoRemove(type) {
+  if (!mainCanvas) return;
+  let picked = autoBest;
+  let forced = false;
+  if (type) {
+    const cfg = autoCandidates.find(c => c.type === type);
+    if (!cfg) { setStatus('这张图的尺寸放不下 ' + type + ' 水印'); return; }
+    // 手动指定类型时也做一次对齐搜索
+    picked = await scoreCandidate(cfg);
+    forced = picked.score < AUTO_SCORE_MIN;   // 指定的类型其实对不上
+  }
+  if (!picked) { setStatus('没有可用的水印类型'); return; }
+
+  const cfg = picked.cfg;
+  const ax = cfg.x + (picked.dx || 0);
+  const ay = cfg.y + (picked.dy || 0);
+  setStatus('正在还原 ' + cfg.name + ' 水印区域…', true);
+  hideResult();
+  await nextFrame();
+
+  try {
+    pushUndo();
+    const w = cfg.wmWidth, h = cfg.wmHeight;
+    const region = mainCtx.getImageData(ax, ay, w, h);
+    const buf = new Float32Array(region.data.length);
+    for (let i = 0; i < buf.length; i++) buf[i] = region.data[i];
+    reverseAlpha(buf, picked.alphaMap);
+    for (let i = 0; i < buf.length; i++) region.data[i] = Math.round(buf[i]);
+    mainCtx.putImageData(region, ax, ay);
+    clearMask();
+
+    /* 反解对无损原图是精确的。但图片被 JPEG 压缩过、或水印尺寸经过换算时，
+       α 接近 1 的实心笔画处噪点会被 1/(1-α) 放大成麻点。
+       这种情况把实心笔画当作"原始信息已丢失"，交给扩散填充重建 —— 实测更干净。 */
+    const ratio = noiseRatio(buf, w, h, picked.alphaMap);
+    lastNoiseRatio = ratio;
+
+    if (ratio >= AUTO_NOISE_THRESHOLD) {
+      const mimg = maskCtx.getImageData(ax, ay, w, h);
+      const md = mimg.data;
+      let cnt = 0;
+      for (let i = 0; i < picked.alphaMap.length; i++) {
+        if (picked.alphaMap[i] >= AUTO_DIFFUSE_ALPHA) {
+          const p = i * 4;
+          md[p] = 255; md[p + 1] = 60; md[p + 2] = 90; md[p + 3] = 200;
+          cnt++;
+        }
+      }
+      if (cnt > 0) {
+        maskCtx.putImageData(mimg, ax, ay);
+        await runInpaint({ internal: true });
+        setStatus(forced
+          ? ('已按 ' + cfg.name + ' 处理完。这张图看起来不太像有 ' + cfg.name + ' 水印，效果不对就点"撤销"。')
+          : (cfg.name + ' 水印已去除。这张图压缩过，笔画部分做了修补，可以保存了。'));
+        return;
+      }
+    }
+
+    setStatus(forced
+      ? ('已按 ' + cfg.name + ' 处理完。这张图看起来不太像有 ' + cfg.name + ' 水印，效果不对就点"撤销"。')
+      : (cfg.name + ' 水印已精确还原，可以保存到本地了。还有残留的话，再用涂抹补一下。'));
+  } catch (err) {
+    setStatus('处理失败：' + err.message);
   }
 }
 
